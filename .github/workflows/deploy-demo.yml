@@ -1,0 +1,48 @@
+name: deploy demo to github-pages
+
+on:
+  push:
+    branches: ['main']
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: set up pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+      - name: set up node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: install demo deps
+        run: pnpm -C demo install
+      - name: build demo
+        run: pnpm -C demo build
+      - name: configure pages
+        uses: actions/configure-pages@v3
+      - name: upload demo dist artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: './demo/dist'
+      - name: deploy demo
+        id: deployment
+        uses: actions/deploy-pages@v1

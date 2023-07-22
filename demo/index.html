@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>kinect WebUSB demo</title>
+</head>
+
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/main.ts"></script>
+
+  <marquee id="annoying" behavior="alternate">WebUSB not found</marquee>
+
+  <div id="plugItIn">
+    <h1>Plug in your kinect</h1>
+    <h2><a href="https://github.com/turbocrime/webnect">webnect is a WebUSB driver for the xbox360 kinect</a></h2>
+    <p>when your kinect is plugged in, activate it with the UI below</p>
+    <img src="https://github.com/turbocrime/webnect/assets/134443988/141bb8b5-fdf4-45a4-b58e-2f00b590fae8"
+      alt="an image of the appropriate kinect">
+    <p>Firefox, Safari are not supported ;_; only chrom</p>
+    <p>i have only tried this with my kinect. you can try it on yours if you like</p>
+    <fieldset id="requestDevices">
+      <legend>
+        <h3>
+          New Device
+        </h3>
+      </legend>
+      <button id="connectUsb">Request Devices</button>
+      <label><input type="checkbox" id="motorCb"></input>Motor</label>
+      <label><input type="checkbox" id="cameraCb" checked></input>Camera</label>
+      <label><input type="checkbox" id="audioCb" disabled></input>Audio (not yet)</label>
+    </fieldset>
+  </div>
+
+  <fieldset id="pairedDevices" hidden>
+    <legend>
+      <h3>
+        Paired Devices
+      </h3>
+    </legend>
+    <div id="pairedDeviceList">
+    </div>
+  </fieldset>
+
+  </div>
+
+  <fieldset id="cameraDemo" hidden>
+    <legend>
+      <h2>Camera</h2>
+    </legend>
+    <label>
+      <input type="checkbox" id="depthStream"></input>Depth Stream
+    </label>
+    <div class="canvasBack">
+      <canvas id="depthCanvas" width="640" height="480"></canvas>
+    </div>
+  </fieldset>
+
+  <fieldset id="motorDemo" hidden>
+    <legend>
+      <h2>Motor</h2>
+    </legend>
+    <fieldset id="ledDemo">
+      <legend>
+        <h3>LED</h3>
+      </legend>
+      <button id="ledInput">LED Color</button>
+    </fieldset>
+    <fieldset id="tiltDemo">
+      <legend>
+        <h3>Tilt</h3>
+      </legend>
+      <input id="tiltInput" type="range" min="-27" max="27" step="1"></input>
+      <p>tilt: <code id="angleDisplay"></code>°</p>
+      <p>servo: <code id="servoDisplay"></code></p>
+      <p>accel: <code id="accelDisplay"></code></p>
+    </fieldset>
+  </fieldset>
+
+</body>
+
+</html>

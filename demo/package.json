@@ -1,0 +1,20 @@
+{
+	"name": "webnect-demo",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc && vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"webnect": "workspace:../"
+	},
+	"devDependencies": {
+		"@types/node": "^20.4.4",
+		"@types/w3c-web-usb": "^1.0.6",
+		"@vitejs/plugin-basic-ssl": "^1.0.1",
+		"vite": "^4.4.6"
+	}
+}

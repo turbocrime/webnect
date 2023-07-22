@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"module": "es2022",
+		"target": "es2022",
+		"lib": [
+			"dom",
+			"es2022",
+		],
+		"moduleResolution": "node",
+		"strict": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"outDir": "dist",
+		"declaration": true,
+	},
+	"include": [
+		"src"
+	],
+	"rootDirs": [
+		"src"
+	]
+}
