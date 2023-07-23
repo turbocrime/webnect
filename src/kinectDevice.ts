@@ -10,25 +10,29 @@ export class KinectDevice {
 	ready: Promise<this>;
 
 	constructor(devices?: {
-		motor?: USBDevice | boolean;
 		camera?: USBDevice | boolean;
+		motor?: USBDevice | boolean;
 		audio?: USBDevice | boolean;
 	}) {
-		this.ready = this.init(devices?.motor, devices?.camera, devices?.audio);
+		this.ready = this.init(
+			devices?.camera ?? true,
+			devices?.motor ?? false,
+			devices?.audio ?? false,
+		);
 	}
 
 	async init(
-		motor?: USBDevice | boolean,
 		camera?: USBDevice | boolean,
+		motor?: USBDevice | boolean,
 		audio?: USBDevice | boolean,
 	) {
-		if (motor !== false)
-			this.motor = await this.claimNuiMotor(motor === true ? undefined : motor);
-		if (camera !== false)
-			this.camera = await this.claimNuiCamera(
-				camera === true ? undefined : camera,
-			);
-		if (audio !== false) this.audio = audio === true ? undefined : undefined; //await claimNuiAudio();
+		const dPromises = Array();
+		if (motor)
+			dPromises.push(this.claimNuiMotor(motor === true ? undefined : motor));
+		if (camera)
+			dPromises.push(this.claimNuiCamera(camera === true ? undefined : camera));
+		if (audio) dPromises.push(Promise.resolve(undefined));
+		await Promise.allSettled(dPromises);
 		return this;
 	}
 
@@ -43,7 +47,8 @@ export class KinectDevice {
 		await dev.open();
 		await dev.selectConfiguration(1);
 		await dev.claimInterface(0);
-		return new KinectCamera(dev);
+		this.camera = new KinectCamera(dev);
+		return this.camera;
 	}
 
 	async claimNuiMotor(select?: USBDevice): Promise<KinectMotor> {
@@ -57,6 +62,7 @@ export class KinectDevice {
 		await dev.open();
 		await dev.selectConfiguration(1);
 		await dev.claimInterface(0);
-		return new KinectMotor(dev);
+		this.motor = new KinectMotor(dev);
+		return this.motor;
 	}
 }
