@@ -121,11 +121,17 @@ function setupDepthDemo(kinect: KinectDevice) {
 		document.querySelector<HTMLCanvasElement>("#depthCanvas")!;
 	const depthCtx = depthCanvas.getContext("2d")!;
 
+	const fsDepth = document.querySelector<HTMLButtonElement>("#fsDepth")!;
+	fsDepth.addEventListener("click", () => {
+		depthCanvas.requestFullscreen();
+	});
+
 	const runStream = async () => {
 		try {
 			depthStreamCb.checked = true;
 			const depthStream = await kinect.camera!.streamDepthFrames();
 			for await (const frame of depthStream) {
+				const colorMarch = window.performance.now() / 10;
 				const grayFrame = KinectCamera.unpackDepthFrame(frame!.buffer);
 
 				// frame is 11bit/u16gray, expand for canvas rgba
@@ -134,11 +140,11 @@ function setupDepthDemo(kinect: KinectDevice) {
 					const pixel16 = grayFrame[i];
 
 					// this counts as art
-					rgbaFrame[i * 4 + 0] = (pixel16 << 1) & 0xff;
-					rgbaFrame[i * 4 + 1] = (pixel16 << 2) & 0xff;
-					rgbaFrame[i * 4 + 2] = (pixel16 << 3) & 0xff;
+					rgbaFrame[i * 4 + 0] = ((pixel16 << 1) + colorMarch) & 0xff;
+					rgbaFrame[i * 4 + 1] = ((pixel16 << 2) + colorMarch) & 0xff;
+					rgbaFrame[i * 4 + 2] = ((pixel16 << 3) + colorMarch) & 0xff;
 
-					rgbaFrame[i * 4 + 3] = 255;
+					rgbaFrame[i * 4 + 3] = pixel16 < 2047 ? 0xff : 0;
 				}
 				depthCtx.putImageData(new ImageData(rgbaFrame, 640, 480), 0, 0);
 			}
