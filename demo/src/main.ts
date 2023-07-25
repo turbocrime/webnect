@@ -3,7 +3,7 @@ import "./style.css";
 import {
 	KinectDevice,
 	KinectCamera,
-	ProductId,
+	KinectProductId,
 	usbSupport,
 } from "@webnect/webnect";
 
@@ -83,13 +83,13 @@ function setupKinect(requestUsbBtn: HTMLButtonElement) {
 		} = { motor: false, camera: false, audio: false };
 		existingUsb.forEach((device) => {
 			switch (device.productId) {
-				case ProductId.NUI_MOTOR:
+				case KinectProductId.NUI_MOTOR:
 					devicesArg.motor = device;
 					break;
-				case ProductId.NUI_CAMERA:
+				case KinectProductId.NUI_CAMERA:
 					devicesArg.camera = device;
 					break;
-				case ProductId.NUI_AUDIO:
+				case KinectProductId.NUI_AUDIO:
 					devicesArg.audio = device;
 					break;
 			}

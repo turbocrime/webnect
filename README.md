@@ -8,7 +8,7 @@ chrome only :'C mozzy dont do webusb
 
 i have never written a usb driver before, nor even a typescript library, so critique is welcome.
 
-currently, this driver only supports "Xbox NUI Motor" PID `0x02b0` and "Xbox NUI Camera" PID `0x02ae` devices, because that's what i found at goodwill. theres a few different models of "kinect", some with dramatic hardware revisions. if your device doesn't work with this, please verify that it works at all, and then send me the details.
+currently, this driver only supports "Xbox NUI Motor" PID `0x02b0` and "Xbox NUI Camera" PID `0x02ae` devices, labelled "Model 1414", because that's what i found at goodwill. i believe there's a few externally-identical models of "kinect", some with dramatic hardware revisions. if your device doesn't work with this, please verify that it works at all, and then send me the details.
 
 ## what
 
@@ -29,7 +29,7 @@ a webusb driver lets more folks see it in person :) after i rewrite everything :
 ### Xbox NUI Camera
 
 * depth camera 11bit only
-* thats it
+* thats it for now
 * no ir
 * no visible
 
@@ -37,13 +37,13 @@ a webusb driver lets more folks see it in person :) after i rewrite everything :
 
 i failed to build libfreenect with emscripten. libusb added webusb/wasm platform support last year, so theoretically it's possible.
 
-i had it at some point but then i couldn't build the examples, and then something changed and my script stopped working. idk. emscripten is always dropping symbols or targeting "darwin" or trying to use pthreads or something. also cmake is hell.
-
 whatever. its the future and webusb is real
 
 ## how
 
-i guess i should figure out how to upload to npm, but for now you can just pull this repo.
+available on npm as [`@webnect/webnect`](https://www.npmjs.com/package/@webnect/webnect)
+
+for local demos, clone the repo.
 
 go dig your kinect out of the closet. plug it in. run
 
@@ -60,17 +60,36 @@ after you dismiss the scary ssl warning you'll see a page with basic demos. go w
 
 by default, it will try to acquire just the camera. hit the button (webusb requires user action to initiate), then select one of the available devices in the modal (there is probably only one).
 
-## dont work
+no docs, but the lib is pretty simple. you can instantiate a new kinect with
 
-if you see nothing in the device selection modal, you probably have the wrong model of kinect. check your device ID on linux by running `lsusb` and on macos by running `system_profiler SPUSBDataType`
+```typescript
+import { KinectDevice } from webnect;
+const k = await (new KinectDevice()).ready;
+```
+
+the constructor takes a single optional argument, `devices`, of type
+
+```typescript
+devices? : {
+    camera?: USBDevice | boolean, // default true
+    motor?: USBDevice| boolean, // default false
+    audio?: USBDevice | boolean, // default false
+}
+```
+
+pass a boolean indicating your desire to request acquisition, or pass a USBDevice if you have already one already acquired.
+
+## it dont work
+
+if you see an empty device selection modal, you probably have the wrong model kinect. you can check your usb devices with `lsusb` on linux or on `system_profiler SPUSBDataType` on macos
 
 if you see glitchy stream output, haha nice. cool
 
 ## bad parts
 
-typescript aint exactly the optimal language for bitmath or destructuring binary data
-
 a single kinect is technically three devices in a trenchcoat. afaict there's no way to associate them, because webusb won't expose bus position. it doesn't matter; you probably only plugged in one kinect anyway.
+
+also, typescript aint exactly the optimal language for bitmath or destructuring binary data
 
 ## the future
 

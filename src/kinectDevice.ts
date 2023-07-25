@@ -2,11 +2,11 @@ import { KinectMotor } from "./kinectMotor";
 import { KinectCamera } from "./kinectCamera";
 //import { KinectAudio } from "./kinectAudio";
 
-export enum VendorId {
+export enum KinectVendorId {
 	MICROSOFT = 0x045e,
 }
 
-export enum ProductId {
+export enum KinectProductId {
 	NUI_MOTOR = 0x02b0,
 	NUI_CAMERA = 0x02ae,
 	NUI_AUDIO = 0x02ad,
@@ -50,7 +50,10 @@ export class KinectDevice {
 			select ||
 			(await navigator.usb.requestDevice({
 				filters: [
-					{ vendorId: VendorId.MICROSOFT, productId: ProductId.NUI_CAMERA },
+					{
+						vendorId: KinectVendorId.MICROSOFT,
+						productId: KinectProductId.NUI_CAMERA,
+					},
 				],
 			}));
 		await dev.open();
@@ -65,7 +68,10 @@ export class KinectDevice {
 			select ||
 			(await navigator.usb.requestDevice({
 				filters: [
-					{ vendorId: VendorId.MICROSOFT, productId: ProductId.NUI_MOTOR },
+					{
+						vendorId: KinectVendorId.MICROSOFT,
+						productId: KinectProductId.NUI_MOTOR,
+					},
 				],
 			}));
 		await dev.open();
