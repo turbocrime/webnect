@@ -33,8 +33,10 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
-      - name: install demo deps
-        run: pnpm -C demo install
+      - name: install all deps
+        run: pnpm install
+      - name: build local package
+        run: pnpm build
       - name: build demo
         run: pnpm -C demo build
       - name: configure pages

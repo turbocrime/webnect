@@ -1,16 +1,24 @@
 {
-	"name": "webnect",
+	"name": "@webnect/webnect",
+	"author": "turbocrime",
+	"description": "a webUSB driver for the xbox360 kinect",
 	"version": "0.0.1",
 	"type": "module",
 	"workspaces": ["demo"],
 	"exports": {
-		".": "./src/webnect.ts"
+		".": "./dist/index.js"
 	},
-	"types": "./dist/webnect.d.ts",
-	"files": ["dist"],
+	"types": "./dist/index.d.ts",
+	"files": ["./dist"],
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"dev": "pnpm -C demo dev",
-		"build": "tsc"
+		"build": "tsc",
+		"clean": "rm -rf ./dist/*",
+		"lint": "rome check src",
+		"prepublishOnly": "pnpm clean && pnpm lint && pnpm build"
 	},
 	"devDependencies": {
 		"@types/w3c-web-usb": "^1.0.6",

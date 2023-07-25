@@ -1,6 +1,11 @@
 import "./style.css";
 
-import { KinectDevice, KinectCamera, ProductId, usbSupport } from "webnect";
+import {
+	KinectDevice,
+	KinectCamera,
+	ProductId,
+	usbSupport,
+} from "@webnect/webnect";
 
 if (usbSupport) document.getElementById("annoying")!.remove();
 

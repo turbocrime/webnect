@@ -20,16 +20,13 @@ importers:
 
   demo:
     dependencies:
-      webnect:
+      '@webnect/webnect':
         specifier: workspace:../
         version: link:..
     devDependencies:
       '@types/node':
         specifier: ^20.4.4
         version: 20.4.4
-      '@types/w3c-web-usb':
-        specifier: ^1.0.6
-        version: 1.0.6
       '@vitejs/plugin-basic-ssl':
         specifier: ^1.0.1
         version: 1.0.1(vite@4.4.6)

@@ -1,7 +1,16 @@
 import { KinectMotor } from "./kinectMotor";
 import { KinectCamera } from "./kinectCamera";
-import { ProductId, VendorId } from "./webnect";
 //import { KinectAudio } from "./kinectAudio";
+
+export enum VendorId {
+	MICROSOFT = 0x045e,
+}
+
+export enum ProductId {
+	NUI_MOTOR = 0x02b0,
+	NUI_CAMERA = 0x02ae,
+	NUI_AUDIO = 0x02ad,
+}
 
 export class KinectDevice {
 	camera?: KinectCamera;

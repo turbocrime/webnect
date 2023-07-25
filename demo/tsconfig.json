@@ -3,11 +3,6 @@
     "target": "es2022",
     "useDefineForClassFields": true,
     "module": "es2022",
-    "paths": {
-      "webnect": [
-        "../src/webnect.ts"
-      ]
-    },
     "lib": [
       "es2022",
       "DOM",

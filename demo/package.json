@@ -9,11 +9,10 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
-		"webnect": "workspace:../"
+		"@webnect/webnect": "workspace:../"
 	},
 	"devDependencies": {
 		"@types/node": "^20.4.4",
-		"@types/w3c-web-usb": "^1.0.6",
 		"@vitejs/plugin-basic-ssl": "^1.0.1",
 		"vite": "^4.4.6"
 	}
