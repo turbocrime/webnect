@@ -7,12 +7,17 @@ import {
 	usbSupport,
 } from "@webnect/webnect";
 
+import * as posenet from "@tensorflow-models/posenet";
+import * as tf from "@tensorflow/tfjs-core";
+import "@tensorflow/tfjs-backend-webgl";
+await tf.setBackend("webgl");
+
 if (usbSupport) document.getElementById("annoying")!.remove();
 
 let existingUsb = await navigator.usb.getDevices();
 const forgottenUsb = ["Reload page to reconnect to forgotten devices"];
 
-function renderExistingUsb() {
+function listExistingUsb() {
 	const plugItIn = document.querySelector<HTMLDivElement>("#plugItIn")!;
 	const pairedDeviceDisplay =
 		document.querySelector<HTMLDivElement>("#pairedDevices")!;
@@ -65,7 +70,7 @@ function renderExistingUsb() {
 
 const updateExistingUsb = async () => {
 	existingUsb = await navigator.usb.getDevices();
-	renderExistingUsb();
+	listExistingUsb();
 };
 
 function setupKinect(requestUsbBtn: HTMLButtonElement) {
@@ -75,7 +80,7 @@ function setupKinect(requestUsbBtn: HTMLButtonElement) {
 	};
 
 	if (existingUsb.length) {
-		renderExistingUsb();
+		listExistingUsb();
 		const devicesArg: {
 			motor: boolean | USBDevice;
 			camera: boolean | USBDevice;
@@ -132,6 +137,9 @@ function setupDepthDemo(kinect: KinectDevice) {
 	});
 
 	const runStream = async () => {
+		console.log("loading posenet...");
+		const pnet = await posenet.load();
+		console.log("posenet loaded");
 		try {
 			depthStreamCb.checked = true;
 			const depthStream = await kinect.camera!.streamDepthFrames();
@@ -152,6 +160,8 @@ function setupDepthDemo(kinect: KinectDevice) {
 					rgbaFrame[i * 4 + 3] = pixel16 < 2047 ? 0xff : 0;
 				}
 				depthCtx.putImageData(new ImageData(rgbaFrame, 640, 480), 0, 0);
+				const pose = await pnet.estimateSinglePose(depthCanvas);
+				console.log("pose", pose);
 			}
 		} catch (e) {
 			cameraDemo.disabled = true;
