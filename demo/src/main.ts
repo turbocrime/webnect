@@ -126,9 +126,34 @@ function setupDepthDemo(kinect: KinectDevice) {
 		document.querySelector<HTMLCanvasElement>("#depthCanvas")!;
 	const depthCtx = depthCanvas.getContext("2d")!;
 
+	const canvasAspect = 640 / 480;
+	const screenAspect = screen.width / screen.height;
+	// center crop fullscreen
+	const fsWidth = screenAspect > canvasAspect ? 640 : screenAspect * 480;
+	const fsHeight = screenAspect > canvasAspect ? 640 / screenAspect : 480;
+	const fsZeroX = -((640 - fsWidth) / 2);
+	const fsZeroY = -((480 - fsHeight) / 2);
+
 	const fsDepth = document.querySelector<HTMLButtonElement>("#fsDepth")!;
 	fsDepth.addEventListener("click", () => {
 		depthCanvas.requestFullscreen();
+	});
+
+	let wakeLock: WakeLockSentinel;
+	document.addEventListener("fullscreenchange", async () => {
+		if (document.fullscreenElement) {
+			depthCanvas.width = fsWidth;
+			depthCanvas.height = fsHeight;
+			try {
+				wakeLock = await navigator.wakeLock.request();
+			} catch (e) {
+				console.warn("wakeLock failed");
+			}
+		} else {
+			depthCanvas.width = 640;
+			depthCanvas.height = 480;
+			wakeLock?.release();
+		}
 	});
 
 	const runStream = async () => {
@@ -151,7 +176,11 @@ function setupDepthDemo(kinect: KinectDevice) {
 
 					rgbaFrame[i * 4 + 3] = pixel16 < 2047 ? 0xff : 0;
 				}
-				depthCtx.putImageData(new ImageData(rgbaFrame, 640, 480), 0, 0);
+
+				const drawFrame = new ImageData(rgbaFrame, 640, 480);
+				if (document.fullscreenElement)
+					depthCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
+				else depthCtx.putImageData(drawFrame, 0, 0);
 			}
 		} catch (e) {
 			cameraDemo.disabled = true;
