@@ -161,6 +161,7 @@ function setupDepthDemo(kinect: KinectDevice) {
 			depthStreamCb.checked = true;
 			const depthStream = await kinect.camera!.streamDepthFrames();
 			for await (const frame of depthStream) {
+				console.log("got frame", frame);
 				const colorMarch = window.performance.now() / 10;
 				const grayFrame = KinectCamera.unpackDepthFrame(frame!.buffer);
 

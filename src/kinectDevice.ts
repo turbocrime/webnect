@@ -18,11 +18,17 @@ export class KinectDevice {
 	audio?: undefined; //KinectAudio;
 	ready: Promise<this>;
 
+	rgbBuffer: ArrayBuffer;
+	depthBuffer: ArrayBuffer;
+
 	constructor(devices?: {
 		camera?: USBDevice | boolean;
 		motor?: USBDevice | boolean;
 		audio?: USBDevice | boolean;
 	}) {
+		this.rgbBuffer = new ArrayBuffer(640 * 480 * 4);
+		this.depthBuffer = new ArrayBuffer(640 * 480 * 2);
+
 		this.ready = this.init(
 			devices?.camera ?? true,
 			devices?.motor ?? false,
@@ -58,7 +64,6 @@ export class KinectDevice {
 			}));
 		await dev.open();
 		await dev.selectConfiguration(1);
-		await dev.claimInterface(0);
 		this.camera = new KinectCamera(dev);
 		return this.camera;
 	}
@@ -74,10 +79,9 @@ export class KinectDevice {
 					},
 				],
 			}));
-		await dev.open();
-		await dev.selectConfiguration(1);
-		await dev.claimInterface(0);
 		this.motor = new KinectMotor(dev);
 		return this.motor;
 	}
+
+	async handleWorkerMessage(event: MessageEvent) {}
 }

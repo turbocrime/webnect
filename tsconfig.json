@@ -5,6 +5,7 @@
 		"lib": [
 			"dom",
 			"es2022",
+			"webworker"
 		],
 		"strict": true,
 		"esModuleInterop": true,

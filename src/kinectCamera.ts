@@ -108,6 +108,7 @@ type CamMode = {
 
 export class KinectCamera {
 	dev: USBDevice;
+
 	tag: number;
 
 	//visibleStream?: KinectStream;
@@ -136,29 +137,42 @@ export class KinectCamera {
 		await this.writeRegister(CamRegAddr.PROJECTOR, OFF); // disable projector autocycle. TODO: why? position?
 		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF); // in case it was on
 
-		await this.writeDepthMode();
-
-		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, CamModeActive.DEPTH);
-		await this.writeRegister(CamRegAddr.DEPTH_FLIP, OFF); // disable depth hflip. TODO: position?
-	}
-
-	async writeDepthMode() {
 		// TODO: more modes
 		this.mode.depth = CamModeDepth.D_11B;
 		await this.writeRegister(CamRegAddr.DEPTH_BPP, 0b11 as CamModeDepth);
 		await this.writeRegister(CamRegAddr.DEPTH_RES, CamModeRes.MED);
 		await this.writeRegister(CamRegAddr.DEPTH_FPS, 30 as CamModeFps);
+
+		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, CamModeActive.DEPTH);
+		await this.writeRegister(CamRegAddr.DEPTH_FLIP, OFF); // disable depth hflip. TODO: position?
 	}
 
 	async streamDepthFrames() {
 		console.log("called streamDepthFrames");
 		await this.initDepthStream();
+
 		const endpoint =
 			this.dev.configuration!.interfaces[0].alternate.endpoints.find(
 				(e) => e.endpointNumber === CamUsbEndpoint.DEPTH,
 			)!;
-		this.depthStream = new KinectStream(this.dev, endpoint);
-		return await this.depthStream.stream();
+
+		const iface = this.dev.configuration!.interfaces[0];
+		console.log("interface", iface, "endpoint", endpoint);
+		console.log(
+			"creating KinectStream",
+			this.dev,
+			0,
+			endpoint.endpointNumber - 1,
+		);
+		const devIdx = await navigator.usb
+			.getDevices()
+			.then((devs) => devs.indexOf(this.dev));
+		this.depthStream = new KinectStream(
+			devIdx,
+			iface.interfaceNumber,
+			endpoint.endpointNumber - 1,
+		);
+		return await this.depthStream.frames();
 	}
 
 	static unpackDepthFrame(frame: ArrayBuffer) {
