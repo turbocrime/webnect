@@ -3,7 +3,7 @@ let iface: USBInterface;
 let endP: USBEndpoint;
 let batchSize: number;
 let packetSize: number;
-let writable: WritableStream<ArrayBuffer>;
+let writable: WritableStream;
 
 let stopStream = false;
 
@@ -15,16 +15,22 @@ const ready = new Promise((resolve) => {
 });
 
 self.addEventListener("message", async (event) => {
-	console.log("worker received", event?.data?.type, event);
 	switch (event.data?.type) {
 		case "init": {
+			console.info("kinectWorker init", event);
 			const init = await initStream(event.data);
 			postMessage({ ...init, type: "init" });
 			makeReady();
 			break;
 		}
 		case "start": {
-			runningStream = beginStreaming();
+			console.info("kinectWorker start", event);
+			runningStream = isochronousStream();
+			break;
+		}
+		case "stop": {
+			console.info("kinectWorker stop", event);
+			stopStream = true;
 			break;
 		}
 		case "abort": {
@@ -34,16 +40,14 @@ self.addEventListener("message", async (event) => {
 			break;
 		}
 		case "close": {
-			console.log("kinectWorker close", event);
+			console.warn("kinectWorker close", event);
 			stopStream = true;
-			writable?.close();
 			break;
 		}
 		default: {
 			console.error("kinectWorker unknown", event);
 		}
 	}
-	console.log("exit worker listener");
 });
 
 async function initStream(opt: {
@@ -57,11 +61,12 @@ async function initStream(opt: {
 }) {
 	const d = await navigator.usb.getDevices();
 	dev = d[opt.device];
-	console.log("selected device", dev);
 	await dev.open();
 	await dev.selectConfiguration(1);
 	iface = dev.configuration!.interfaces[opt.iFIdx ?? 0];
+	// TODO: can other interfaces be simultaneously claimed by other workers?
 	await dev.claimInterface(opt.iFIdx ?? 0);
+	console.info("worker claimed interface", iface);
 	endP = iface.alternate.endpoints[opt.ePIdx ?? 0];
 	batchSize = opt.batchSize ?? 512;
 	packetSize = opt.packetSize ?? endP.packetSize;
@@ -75,35 +80,48 @@ async function initStream(opt: {
 	};
 }
 
-async function beginStreaming() {
-	console.log("streaming waiting...");
-	await ready;
-	console.log("streaming ready");
-	const tq = Array();
+async function isochronousStream() {
 	const w = writable.getWriter();
+	let iterCount = 0;
+	let transferCount = 0;
 	while (!stopStream) {
-		if (tq.length < 2) {
-			console.log("pushing to tq");
-			tq.push(
-				dev
-					.isochronousTransferIn(
-						endP.endpointNumber + 1, // god damn it
-						Array(batchSize).fill(packetSize),
-					)
-					.then((r) => {
-						if (r.data) w.write(r.data.buffer);
-					}),
-			);
-		} else {
-			const f = tq.shift();
-			f.catch((e) => {
-				console.error("error in tq", e);
+		iterCount++;
+		await Promise.all([
+			// TODO: apply backpressure at promise creation, not resolution
+			new Promise((resolve) => setTimeout(resolve, 57)),
+			w.ready,
+		]);
+
+		dev
+			.isochronousTransferIn(
+				endP.endpointNumber + 1, // god damn it
+				Array(batchSize).fill(packetSize),
+			)
+			.then((r: USBIsochronousInTransferResult) => {
+				transferCount++;
+				w.write({
+					isoData: r.data!.buffer,
+					isoPackets: r.packets.map((p: USBIsochronousInTransferPacket) => ({
+						offset: p.data!.byteOffset,
+						length: p.data!.byteLength,
+						status: p.status,
+					})),
+				});
+			})
+			.catch((e) => {
+				console.error("transfer/write error", e);
 				stopStream = true;
 			});
-			await Promise.allSettled([f, new Promise((r) => setTimeout(r, 10))]);
-		}
 	}
-	console.log("exit beginStreaming");
-	debugger;
-	writable.close();
+	console.warn("stopStream", { iterCount, transferCount });
+	w.ready
+		.then(async () => {
+			w.releaseLock();
+			await writable.close();
+			console.log("writable closed");
+			await dev.releaseInterface(iface.interfaceNumber);
+			await dev.close();
+			console.log("dev closed");
+		})
+		.catch((e) => console.error("error closing", e));
 }

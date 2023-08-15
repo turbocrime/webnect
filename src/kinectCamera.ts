@@ -101,6 +101,7 @@ enum CamModeRes {
 type CamMode = {
 	fps: CamModeFps;
 	res: CamModeRes;
+	flip: 1 | 0;
 	depth?: CamModeDepth;
 	//visible?: CamModeVisible;
 	//ir?: CamModeIR;
@@ -124,6 +125,7 @@ export class KinectCamera {
 			depth: CamModeDepth.D_11B,
 			fps: CamModeFps.F_30P,
 			res: CamModeRes.MED,
+			flip: OFF,
 		};
 	}
 
@@ -137,14 +139,12 @@ export class KinectCamera {
 		await this.writeRegister(CamRegAddr.PROJECTOR, OFF); // disable projector autocycle. TODO: why? position?
 		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF); // in case it was on
 
-		// TODO: more modes
-		this.mode.depth = CamModeDepth.D_11B;
-		await this.writeRegister(CamRegAddr.DEPTH_BPP, 0b11 as CamModeDepth);
-		await this.writeRegister(CamRegAddr.DEPTH_RES, CamModeRes.MED);
-		await this.writeRegister(CamRegAddr.DEPTH_FPS, 30 as CamModeFps);
+		await this.writeRegister(CamRegAddr.DEPTH_BPP, this.mode.depth!);
+		await this.writeRegister(CamRegAddr.DEPTH_RES, this.mode.res);
+		await this.writeRegister(CamRegAddr.DEPTH_FPS, this.mode.fps);
+		await this.writeRegister(CamRegAddr.DEPTH_FLIP, this.mode.flip);
 
 		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, CamModeActive.DEPTH);
-		await this.writeRegister(CamRegAddr.DEPTH_FLIP, OFF); // disable depth hflip. TODO: position?
 	}
 
 	async streamDepthFrames() {

@@ -1,6 +1,15 @@
 const PKT_MAGIC = 0x5242;
 const HDR_SIZE = 12;
 
+type SerializedIso = {
+	isoData: ArrayBuffer;
+	isoPackets: Array<{
+		offset: number;
+		length: number;
+		status: USBTransferStatus;
+	}>;
+};
+
 enum KinectFrameSize {
 	// TODO: more modes
 	DEPTH_11B = 422400, // (640 * 480 * 11) / 8
@@ -39,7 +48,7 @@ export class KinectStream {
 	streamWorker: Worker;
 
 	// rome-ignore lint/suspicious/noExplicitAny: <explanation>
-	frameSizes: any;
+	frameStats: any;
 
 	constructor(devIdx: number, iFIdx: number, ePIdx: number) {
 		this.devIdx = devIdx;
@@ -49,7 +58,7 @@ export class KinectStream {
 		this.packetType = KinectPacketType.DEPTH;
 		this.packetSize = KinectPacketSize.DEPTH;
 		this.frameSize = KinectFrameSize.DEPTH_11B;
-		this.frameSizes = [];
+		this.frameStats = [];
 		this.batchSize = 512;
 		this.sync = false;
 		this.time = 0;
@@ -58,7 +67,6 @@ export class KinectStream {
 		this.streamWorker = new Worker(
 			new URL("./kinectWorker.ts", import.meta.url),
 		);
-		console.log("created KinectStream", this);
 	}
 
 	// rome-ignore lint/suspicious/noExplicitAny: abort for any reason
@@ -68,19 +76,27 @@ export class KinectStream {
 
 	// rome-ignore lint/suspicious/noExplicitAny: desync for any reason
 	desync(...reasons: any) {
+		const anomalies = this.frameStats.filter((f: any) => f.anomaly);
 		this.sync = false;
-		//console.warn("desync", this.seq, ...reasons);
+		console.error(
+			`desync seq ${this.seq}`,
+			...reasons,
+			anomalies
+				.map((a: any) => a.seqDelta - 1 || 0)
+				.reduce((a: any, b: any) => a + b, 0),
+		);
+		console.debug(...reasons, ...anomalies, this.frameStats);
 	}
 
 	resync(sequence: number) {
+		if (!this.sync) console.debug("resync");
+		this.frameStats = [];
 		this.sync = true;
 		this.time = 0;
 		this.seq = sequence;
-		//console.info("resync", this.seq);
 	}
 
 	parsePacket(pkt: DataView) {
-		console.log("parsePacket", pkt, pkt.getUint16(0));
 		if (!pkt) return;
 		if (pkt.byteLength < HDR_SIZE) return;
 		if (pkt.getUint16(0) !== PKT_MAGIC) return;
@@ -100,26 +116,28 @@ export class KinectStream {
 		const endFrame = pType === (this.packetType | KinectPacketType.END);
 
 		if (startFrame) this.resync(pSeq);
-		const seqDelta = Math.abs(pSeq - this.seq);
+		let seqDelta = pSeq - this.seq;
+		if (seqDelta < 0) seqDelta += 256;
+
+		const pLossFill = startFrame ? 0 : (seqDelta - 1) * (this.packetSize - 12);
+		if (pLossFill) {
+			this.frameStats.push({ anomaly: "packet loss", seqDelta, pLossFill });
+		}
+
 		this.seq = pSeq;
 
-		if (this.time && this.time !== pTime)
-			console.log("new timestamp", this.time, pTime);
+		if (this.time && this.time !== pTime) {
+			this.frameStats.push({ anomaly: "timestamp changed" });
+			console.warn("timestamp changed", this.time, pTime);
+		}
 		this.time = pTime;
-
-		if (seqDelta % 255 > 5)
-			this.desync(
-				"packet loss",
-				seqDelta,
-				pSeq,
-				KinectPacketType[pType - this.packetType],
-			);
 
 		return {
 			pBody: pkt.buffer.slice(
 				pkt.byteOffset + HDR_SIZE,
 				pkt.byteOffset + pSize,
 			),
+			pLossFill,
 			pType,
 			pTime,
 			pSeq,
@@ -129,15 +147,12 @@ export class KinectStream {
 		};
 	}
 
-	async launchStreamWorker() {
-		console.log("streamWorker", this.streamWorker);
-
-		const sW = this.streamWorker;
-
+	async initWorker() {
+		// TODO: proper backpressure, proper transforms
 		const { readable, writable } = new TransformStream<
-			ArrayBuffer,
-			ArrayBuffer
-		>();
+			SerializedIso,
+			SerializedIso
+		>(undefined, { highWaterMark: 3 }, { highWaterMark: 3 });
 
 		const workerInit: Promise<{
 			type: "init";
@@ -150,13 +165,13 @@ export class KinectStream {
 			this.streamWorker.addEventListener("message", (event) => {
 				console.log("streamWorker reply", event);
 				if (event.data.type === "init") resolve(event.data);
+				else console.error("unexpected streamWorker message", event.data);
 			});
 		});
 
-		console.log("preparing device");
+		console.log("preparing device for handoff to worker");
 		const devs = await navigator.usb.getDevices();
-		console.log("device number", this.devIdx);
-		console.log("device", devs[this.devIdx]);
+		console.log("device number", this.devIdx, "of", devs);
 		const dev = devs[this.devIdx];
 		if (dev.configuration?.interfaces[this.iFIdx].claimed) {
 			console.log("releasing claimed interface...");
@@ -165,7 +180,6 @@ export class KinectStream {
 		} else {
 			console.log("interface is unclaimed, no release needed");
 		}
-		console.log("postMessage init");
 		this.streamWorker.postMessage(
 			{
 				type: "init",
@@ -182,91 +196,68 @@ export class KinectStream {
 		this.batchSize = batchSize;
 		this.packetSize = packetSize;
 
-		console.log("kinectStream initted", {
-			...bus,
-			batchSize,
-			packetSize,
-		});
-
-		this.streamWorker.postMessage({ type: "start" });
-
 		return readable;
 	}
 
 	async *packets() {
-		console.log("packets");
-		const stream = await this.launchStreamWorker();
-		console.log("stream", stream);
+		const stream = await this.initWorker();
+		this.streamWorker.postMessage({ type: "start" });
 		const reader = stream.getReader();
-		console.log("reader", reader);
-		let t = await reader.read();
-		console.log("initial read", t);
+		let r: ReadableStreamReadResult<SerializedIso>;
 		do {
-			console.log("iterate");
-			t = await reader.read();
-			console.log("iterate read", t);
-			const tbuf = t.value;
-			if (!tbuf) continue;
-			let byteOffset = 0;
-			while (byteOffset < t.value!.byteLength) {
-				console.log("byteOffset", byteOffset);
-				const pdv = new DataView(tbuf, byteOffset, this.packetSize);
-				console.log("magic", pdv.getUint16(0));
-				const pkt = this.parsePacket(pdv);
-				console.log("pkt parsed", pkt);
-				byteOffset += pkt?.pSize ?? this.packetSize;
-				yield pkt;
-			}
-		} while (!t.done);
+			r = await reader.read();
+			this.frameStats?.push({ anomaly: "transfer boundary" });
+			if (!r.value) continue; // TODO: identify possible cases
+			const { isoData, isoPackets } = r.value;
+			for (const p of isoPackets)
+				yield this.parsePacket(new DataView(isoData, p.offset, p.length));
+		} while (!r.done);
+		console.log("packets done");
 	}
 
 	async *frames() {
-		console.log("streaming");
 		const frame = new Uint8Array(this.frameSize);
 		let frameIdx = 0;
+		let remaining = frame.byteLength - frameIdx;
 		for await (const pkt of this.packets()) {
-			const { pBody, pType, pSeq, pTime, startFrame, endFrame } = pkt || {};
+			const { pBody, pLossFill, pType, pSeq, pTime, startFrame, endFrame } =
+				pkt || { pLossFill: 0 };
 			if (!pBody) continue;
-			const remaining = frame.byteLength - frameIdx;
+			remaining = frame.byteLength - frameIdx;
+			if (pLossFill && pLossFill < remaining) {
+				frame.set(new Uint8Array(Array(pLossFill).fill(1)), frameIdx);
+				frameIdx += pLossFill;
+				remaining = frame.byteLength - frameIdx;
+			}
 			if (startFrame) {
 				frameIdx = 0;
-				this.frameSizes = [];
+				remaining = frame.byteLength - frameIdx;
+				this.frameStats = [];
 			}
-			this.frameSizes.push({
-				pType,
-				pSeq,
-				pTime,
-				pBody: pBody.byteLength,
+			this.frameStats.push({
+				pTy: pType,
+				pLF: pLossFill,
+				pS: pSeq,
+				pTi: pTime,
+				pBL: pBody.byteLength,
+				fIdx: frameIdx,
+				r: remaining,
 			});
 			if (remaining < pBody.byteLength) {
-				this.desync("long frame", {
-					frameIdx,
-					remaining,
-					frameSizes: this.frameSizes,
-				});
+				this.desync("long frame");
+				// probably hit a frame boundary during transfer gap.
+				// you should see timestamp changed.
 				frameIdx = 0;
 				continue;
 			}
 			frame.set(new Uint8Array(pBody), frameIdx);
 			frameIdx += pBody.byteLength;
+			remaining = frame.byteLength - frameIdx;
 			if (endFrame && this.sync) {
-				if (frameIdx < this.frameSize)
-					this.desync("short frame", {
-						frameIdx,
-						remaining,
-						frameSizes: this.frameSizes,
-					});
-				else {
-					console.log("frame successful", {
-						frameIdx,
-						remaining,
-						frameSizes: this.frameSizes,
-					});
-
-					yield frame.slice(0, frameIdx);
-				}
+				if (frameIdx < this.frameSize) this.desync("short frame", remaining);
+				else yield frame.slice(0, frameIdx);
 				frameIdx = 0;
-				this.frameSizes = [];
+				this.frameStats = [];
 			}
 		}
 	}
