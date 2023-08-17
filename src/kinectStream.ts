@@ -1,98 +1,92 @@
+import type { SerializedIso, WorkerMsg, WorkerInitMsg } from "./kinectWorker";
+
+const debug = undefined;
+/*
+const debug = {
+	s: Array(),
+	stat: (s: any) => debug.s?.push(s),
+	anomaly: (reason: string, etc?: any) => {
+		console.warn(reason, etc);
+		debug.s?.push({ anomaly: reason, ...(etc ?? {}) });
+	},
+	reset: () => {
+		debug.s = Array();
+	},
+};
+*/
+
 const PKT_MAGIC = 0x5242;
 const HDR_SIZE = 12;
 
-type SerializedIso = {
-	isoData: ArrayBuffer;
-	isoPackets: Array<{
-		offset: number;
-		length: number;
-		status: USBTransferStatus;
-	}>;
-};
-
-enum KinectFrameSize {
+enum StreamFrameSize {
 	// TODO: more modes
-	DEPTH_11B = 422400, // (640 * 480 * 11) / 8
+	DEPTH_11B = (640 * 480 * 11) / 8,
+	DEPTH_10B = (640 * 480 * 10) / 8,
 }
 
 // endpoint specifies a larger max, but iso transfer sends these.
 // this size includes the 12-byte header.
-enum KinectPacketSize {
+enum StreamPacketSize {
 	DEPTH = 1760,
 	VIDEO = 1920,
 }
 
-enum KinectPacketType {
-	DEPTH = 0x70,
-	VIDEO = 0x80,
+enum StreamPacketType {
+	DEPTH = 0b0111_0000,
+	VIDEO = 0b1000_0000,
 	START = 0b001,
 	MID = 0b010,
 	END = 0b101,
 }
 
 export class KinectStream {
-	iFIdx: number;
-	ePIdx: number;
+	ifaceNum: number;
+	endptNum: number;
 	devIdx: number;
-	abortController: AbortController;
 
-	packetType: KinectPacketType;
-	frameSize: KinectFrameSize;
-	packetSize: KinectPacketSize;
+	packetType: StreamPacketType;
+	frameSize: StreamFrameSize;
+	packetSize: StreamPacketSize;
 	batchSize: number;
 
 	sync: boolean;
-	time: number;
+	time?: number;
 	seq: number;
 
-	streamWorker: Worker;
+	usbWorker: Worker;
 
-	// rome-ignore lint/suspicious/noExplicitAny: <explanation>
-	frameStats: any;
-
-	constructor(devIdx: number, iFIdx: number, ePIdx: number) {
+	constructor(devIdx: number, ifaceNum: number, endptNum: number) {
 		this.devIdx = devIdx;
-		this.ePIdx = ePIdx;
-		this.iFIdx = iFIdx;
-		this.abortController = new AbortController();
-		this.packetType = KinectPacketType.DEPTH;
-		this.packetSize = KinectPacketSize.DEPTH;
-		this.frameSize = KinectFrameSize.DEPTH_11B;
-		this.frameStats = [];
+		this.ifaceNum = ifaceNum;
+		this.endptNum = endptNum;
+
+		this.frameSize = StreamFrameSize.DEPTH_11B;
+		this.packetType = StreamPacketType.DEPTH;
+		this.packetSize = StreamPacketSize.DEPTH;
+
 		this.batchSize = 512;
+
 		this.sync = false;
-		this.time = 0;
 		this.seq = 0;
 
-		this.streamWorker = new Worker(
-			new URL("./kinectWorker.ts", import.meta.url),
-		);
+		this.usbWorker = new Worker(new URL("./kinectWorker.ts", import.meta.url));
 	}
 
-	// rome-ignore lint/suspicious/noExplicitAny: abort for any reason
-	abort(reason?: any) {
-		this.abortController.abort(reason);
+	close() {
+		this.usbWorker.postMessage({ type: "close" } as WorkerMsg);
 	}
 
 	// rome-ignore lint/suspicious/noExplicitAny: desync for any reason
-	desync(...reasons: any) {
-		const anomalies = this.frameStats.filter((f: any) => f.anomaly);
+	desync(reason: any) {
 		this.sync = false;
-		console.error(
-			`desync seq ${this.seq}`,
-			...reasons,
-			anomalies
-				.map((a: any) => a.seqDelta - 1 || 0)
-				.reduce((a: any, b: any) => a + b, 0),
-		);
-		console.debug(...reasons, ...anomalies, this.frameStats);
+		debug && console.error("desync", this.seq, reason, debug?.s);
 	}
 
 	resync(sequence: number) {
-		if (!this.sync) console.debug("resync");
-		this.frameStats = [];
+		if (!this.sync) debug && console.debug("resync");
+		debug?.reset();
 		this.sync = true;
-		this.time = 0;
+		this.time = undefined;
 		this.seq = sequence;
 	}
 
@@ -101,47 +95,42 @@ export class KinectStream {
 		if (pkt.byteLength < HDR_SIZE) return;
 		if (pkt.getUint16(0) !== PKT_MAGIC) return;
 
-		const pType: KinectPacketType = pkt.getUint8(3);
+		const pType: StreamPacketType = pkt.getUint8(3);
 		if (pType >> 4 !== this.packetType >> 4) return;
 
 		const pSeq = pkt.getUint8(5);
 
 		const pSize = pkt.getUint16(6);
-		//if (pSize !== pkt.byteLength) return;
+		if (pSize !== pkt.byteLength) return;
 
 		const pTime = pkt.getUint32(8);
 
-		const startFrame = pType === (this.packetType | KinectPacketType.START);
-		const midFrame = pType === (this.packetType | KinectPacketType.MID);
-		const endFrame = pType === (this.packetType | KinectPacketType.END);
+		const startFrame = pType === (this.packetType | StreamPacketType.START);
+		//const midFrame = pType === (this.packetType | KinectPacketType.MID);
+		const endFrame = pType === (this.packetType | StreamPacketType.END);
 
 		if (startFrame) this.resync(pSeq);
+		if (!this.sync) return;
+
 		let seqDelta = pSeq - this.seq;
 		if (seqDelta < 0) seqDelta += 256;
-
-		const pLossFill = startFrame ? 0 : (seqDelta - 1) * (this.packetSize - 12);
-		if (pLossFill) {
-			this.frameStats.push({ anomaly: "packet loss", seqDelta, pLossFill });
-		}
-
 		this.seq = pSeq;
 
-		if (this.time && this.time !== pTime) {
-			this.frameStats.push({ anomaly: "timestamp changed" });
-			console.warn("timestamp changed", this.time, pTime);
-		}
+		const pLoss = seqDelta && (seqDelta - 1) * (this.packetSize - HDR_SIZE);
+		if (pLoss) debug?.anomaly("packet loss", { seqDelta, pLoss });
+
+		if (this.time && this.time !== pTime)
+			debug?.anomaly("timestamp", { time: this.time, pTime });
 		this.time = pTime;
+
+		debug?.stat({ pType, pLoss, pSeq, pTime, pSize });
 
 		return {
 			pBody: pkt.buffer.slice(
 				pkt.byteOffset + HDR_SIZE,
 				pkt.byteOffset + pSize,
 			),
-			pLossFill,
-			pType,
-			pTime,
-			pSeq,
-			pSize,
+			pLoss,
 			startFrame,
 			endFrame,
 		};
@@ -152,112 +141,81 @@ export class KinectStream {
 		const { readable, writable } = new TransformStream<
 			SerializedIso,
 			SerializedIso
-		>(undefined, { highWaterMark: 3 }, { highWaterMark: 3 });
+		>(undefined, { highWaterMark: 2 }, { highWaterMark: 2 });
 
-		const workerInit: Promise<{
-			type: "init";
-			device: number;
-			iface: number;
-			endpoint: number;
-			batchSize: number;
-			packetSize: number;
-		}> = new Promise((resolve) => {
-			this.streamWorker.addEventListener("message", (event) => {
-				console.log("streamWorker reply", event);
-				if (event.data.type === "init") resolve(event.data);
-				else console.error("unexpected streamWorker message", event.data);
+		const workerInit: Promise<
+			WorkerInitMsg & { batchSize: number; packetSize: number }
+		> = new Promise((initReply) => {
+			this.usbWorker.addEventListener("message", (event) => {
+				switch (event.data?.type) {
+					case "init":
+						initReply(event.data);
+						break;
+					case "terminate":
+						this.usbWorker.terminate();
+						break;
+					default:
+						console.error("Unknown message in kinectStream", event);
+						this.usbWorker.terminate();
+						throw TypeError("Unknown message type");
+				}
 			});
 		});
 
-		console.log("preparing device for handoff to worker");
-		const devs = await navigator.usb.getDevices();
-		console.log("device number", this.devIdx, "of", devs);
-		const dev = devs[this.devIdx];
-		if (dev.configuration?.interfaces[this.iFIdx].claimed) {
-			console.log("releasing claimed interface...");
-			await dev.releaseInterface(this.iFIdx);
-			console.log("released");
-		} else {
-			console.log("interface is unclaimed, no release needed");
-		}
-		this.streamWorker.postMessage(
+		this.usbWorker.postMessage(
 			{
 				type: "init",
 				packetSize: this.packetSize,
-				device: 0,
-				iFIdx: 0,
-				ePIdx: 0,
-				writable,
-			},
+				dev: this.devIdx,
+				iface: this.ifaceNum,
+				endpt: this.endptNum,
+				stream: writable,
+			} as WorkerInitMsg,
 			[writable],
 		);
 
 		const { batchSize, packetSize, ...bus } = await workerInit;
-		this.batchSize = batchSize;
-		this.packetSize = packetSize;
+		this.batchSize = batchSize!;
+		this.packetSize = packetSize!;
 
 		return readable;
 	}
 
 	async *packets() {
-		const stream = await this.initWorker();
-		this.streamWorker.postMessage({ type: "start" });
-		const reader = stream.getReader();
-		let r: ReadableStreamReadResult<SerializedIso>;
+		const workerIsoStream = await this.initWorker();
+		this.usbWorker.postMessage({ type: "start" } as WorkerMsg);
+		const r = workerIsoStream.getReader();
+		let sIso: ReadableStreamReadResult<SerializedIso>;
 		do {
-			r = await reader.read();
-			this.frameStats?.push({ anomaly: "transfer boundary" });
-			if (!r.value) continue; // TODO: identify possible cases
-			const { isoData, isoPackets } = r.value;
+			sIso = await r.read();
+			debug?.stat("transfer boundary");
+			if (!sIso.value) continue; // TODO: identify possible cases
+			const { isoData, isoPackets } = sIso.value;
 			for (const p of isoPackets)
-				yield this.parsePacket(new DataView(isoData, p.offset, p.length));
-		} while (!r.done);
-		console.log("packets done");
+				if (p.length)
+					yield this.parsePacket(new DataView(isoData, p.offset, p.length));
+		} while (!sIso.done);
 	}
 
 	async *frames() {
 		const frame = new Uint8Array(this.frameSize);
 		let frameIdx = 0;
-		let remaining = frame.byteLength - frameIdx;
+		const remaining = () => frame.byteLength - frameIdx;
 		for await (const pkt of this.packets()) {
-			const { pBody, pLossFill, pType, pSeq, pTime, startFrame, endFrame } =
-				pkt || { pLossFill: 0 };
+			const { pBody, pLoss, startFrame, endFrame } = pkt || { pLoss: 0 };
 			if (!pBody) continue;
-			remaining = frame.byteLength - frameIdx;
-			if (pLossFill && pLossFill < remaining) {
-				frame.set(new Uint8Array(Array(pLossFill).fill(1)), frameIdx);
-				frameIdx += pLossFill;
-				remaining = frame.byteLength - frameIdx;
+			if (remaining() < pLoss) yield frame.slice(0, frameIdx);
+			frameIdx += pLoss;
+			if (startFrame) frameIdx = 0;
+			if (remaining() < pBody.byteLength) this.desync("long frame");
+			if (this.sync) {
+				frame.set(new Uint8Array(pBody), frameIdx);
+				frameIdx += pBody.byteLength;
 			}
-			if (startFrame) {
+			if (endFrame) {
+				if (frameIdx < this.frameSize) this.desync("short frame");
+				if (this.sync) yield frame.buffer.slice(0, frameIdx);
 				frameIdx = 0;
-				remaining = frame.byteLength - frameIdx;
-				this.frameStats = [];
-			}
-			this.frameStats.push({
-				pTy: pType,
-				pLF: pLossFill,
-				pS: pSeq,
-				pTi: pTime,
-				pBL: pBody.byteLength,
-				fIdx: frameIdx,
-				r: remaining,
-			});
-			if (remaining < pBody.byteLength) {
-				this.desync("long frame");
-				// probably hit a frame boundary during transfer gap.
-				// you should see timestamp changed.
-				frameIdx = 0;
-				continue;
-			}
-			frame.set(new Uint8Array(pBody), frameIdx);
-			frameIdx += pBody.byteLength;
-			remaining = frame.byteLength - frameIdx;
-			if (endFrame && this.sync) {
-				if (frameIdx < this.frameSize) this.desync("short frame", remaining);
-				else yield frame.slice(0, frameIdx);
-				frameIdx = 0;
-				this.frameStats = [];
 			}
 		}
 	}

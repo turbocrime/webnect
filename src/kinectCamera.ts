@@ -6,14 +6,14 @@ const HDR_SIZE = 8;
 
 const OFF = 0;
 
-enum CamUsbControl {
-	ANY_COMMAND = 0x00,
-}
-
 // usb endpoint id, not an array index
 enum CamUsbEndpoint {
 	VIDEO = 0x01,
 	DEPTH = 0x02,
+}
+
+enum CamUsbInterface {
+	CAMERA = 0x0,
 }
 
 enum CamUsbCommand {
@@ -101,7 +101,6 @@ enum CamModeRes {
 type CamMode = {
 	fps: CamModeFps;
 	res: CamModeRes;
-	flip: 1 | 0;
 	depth?: CamModeDepth;
 	//visible?: CamModeVisible;
 	//ir?: CamModeIR;
@@ -125,57 +124,47 @@ export class KinectCamera {
 			depth: CamModeDepth.D_11B,
 			fps: CamModeFps.F_30P,
 			res: CamModeRes.MED,
-			flip: OFF,
 		};
 	}
 
 	async endDepthStream() {
 		this.mode.depth = undefined;
 		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF);
-		this.depthStream?.abort();
+		this.depthStream?.close();
+		this.depthStream = undefined;
 	}
 
 	async initDepthStream() {
-		await this.writeRegister(CamRegAddr.PROJECTOR, OFF); // disable projector autocycle. TODO: why? position?
-		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF); // in case it was on
+		this.mode.depth ??= CamModeDepth.D_11B;
+		this.mode.fps ??= CamModeFps.F_30P;
+		this.mode.res ??= CamModeRes.MED;
 
-		await this.writeRegister(CamRegAddr.DEPTH_BPP, this.mode.depth!);
+		await this.writeRegister(CamRegAddr.PROJECTOR, OFF);
+		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF);
+
+		await this.writeRegister(CamRegAddr.DEPTH_BPP, this.mode.depth);
 		await this.writeRegister(CamRegAddr.DEPTH_RES, this.mode.res);
 		await this.writeRegister(CamRegAddr.DEPTH_FPS, this.mode.fps);
-		await this.writeRegister(CamRegAddr.DEPTH_FLIP, this.mode.flip);
+		await this.writeRegister(CamRegAddr.DEPTH_FLIP, OFF);
 
 		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, CamModeActive.DEPTH);
 	}
 
-	async streamDepthFrames() {
-		console.log("called streamDepthFrames");
+	async *streamDepthFrames() {
 		await this.initDepthStream();
 
-		const endpoint =
-			this.dev.configuration!.interfaces[0].alternate.endpoints.find(
-				(e) => e.endpointNumber === CamUsbEndpoint.DEPTH,
-			)!;
-
-		const iface = this.dev.configuration!.interfaces[0];
-		console.log("interface", iface, "endpoint", endpoint);
-		console.log(
-			"creating KinectStream",
-			this.dev,
-			0,
-			endpoint.endpointNumber - 1,
-		);
 		const devIdx = await navigator.usb
 			.getDevices()
 			.then((devs) => devs.indexOf(this.dev));
 		this.depthStream = new KinectStream(
 			devIdx,
-			iface.interfaceNumber,
-			endpoint.endpointNumber - 1,
+			CamUsbInterface.CAMERA,
+			CamUsbEndpoint.DEPTH,
 		);
-		return await this.depthStream.frames();
+		yield* this.depthStream.frames();
 	}
 
-	static unpackDepthFrame(frame: ArrayBuffer) {
+	static unpack11bitGray(frame: ArrayBuffer) {
 		const src = new Uint8Array(frame);
 		const dest = new Uint16Array(640 * 480);
 		let window = 0;
@@ -197,7 +186,6 @@ export class KinectCamera {
 
 	async command(cmdId: CamUsbCommand, body: Uint16Array) {
 		const cmdBuffer = new ArrayBuffer(HDR_SIZE + body.byteLength);
-		if (cmdBuffer.byteLength > 1024) throw Error("command exceeds 1024 bytes");
 
 		const cmdHeader = new Uint16Array(cmdBuffer, 0, HDR_SIZE / 2);
 		cmdHeader.set([MAGIC_OUT, body.length, cmdId, this.tag]);
@@ -213,7 +201,7 @@ export class KinectCamera {
 			{
 				requestType: "vendor",
 				recipient: "device",
-				request: CamUsbControl.ANY_COMMAND,
+				request: 0,
 				value: 0,
 				index: 0,
 			},
@@ -221,66 +209,59 @@ export class KinectCamera {
 		);
 
 		if (usbResponse.status !== "ok")
-			throw new Error(`command failed ${usbResponse}`);
+			throw Error(`command failed ${usbResponse}`);
 
 		let cmdResponse: USBInTransferResult;
+		let delay = Promise.resolve();
 		do {
+			await delay;
+			delay = new Promise((resolve) => setTimeout(resolve, 10));
 			cmdResponse = await this.dev.controlTransferIn(
 				{
 					requestType: "vendor",
 					recipient: "device",
-					request: CamUsbControl.ANY_COMMAND,
+					request: 0,
 					value: 0,
 					index: 0,
 				},
 				512,
 			);
-			await new Promise((resolve) => setTimeout(resolve, 10));
 		} while (!cmdResponse!.data?.byteLength);
 
 		const rHeader = new Uint16Array(cmdResponse.data!.buffer, 0, HDR_SIZE / 2);
 		const rBody = new Uint16Array(cmdResponse.data!.buffer, HDR_SIZE);
 
 		const [rMagic, rLength, rCmdId, rTag] = rHeader;
-		console.info(
-			"response ",
-			CamUsbCommand[rCmdId],
-			"seq",
-			rTag,
-			"body",
-			...rBody,
-		);
 
-		if (rMagic !== MAGIC_IN) return console.error(`bad magic ${rMagic}`);
+		if (rMagic !== MAGIC_IN) throw Error(`bad magic ${rMagic}`);
 		if (rLength !== rBody.length)
-			return console.error(`bad length ${rLength} expected ${rBody.length}`);
+			throw Error(`bad length ${rLength} expected ${rBody.length}`);
 		if (rCmdId !== cmdId)
-			return console.error(`bad command ${rCmdId} expected ${cmdId}`);
-		if (rTag !== this.tag)
-			return console.error(`bad tag ${rTag} expected ${this.tag}`);
+			throw Error(`bad command ${rCmdId} expected ${cmdId}`);
+		if (rTag !== this.tag) throw Error(`bad tag ${rTag} expected ${this.tag}`);
 
 		this.tag++;
 		return rBody;
 	}
 
 	async writeRegister(register: CamRegAddr, value: number) {
-		console.log("writeRegister", CamRegAddr[register], value);
+		console.debug("writeRegister", CamRegAddr[register], value);
 		const write = await this.command(
 			CamUsbCommand.WRITE_REGISTER,
 			new Uint16Array([register, value]),
 		);
 		if (write?.length !== 1 || write[0] !== 0)
-			return console.warn(`bad write ${write}`);
-		return write;
+			throw Error(`bad write ${write}`);
+		else return write;
 	}
 
 	async readRegister(register: number) {
-		console.log("readRegister", CamRegAddr[register]);
+		console.debug("readRegister", CamRegAddr[register]);
 		const read = await this.command(
 			CamUsbCommand.READ_REGISTER,
 			new Uint16Array([register]),
 		);
-		if (read!.length !== 2) return console.warn(`bad read ${read}`);
-		return read;
+		if (read!.length !== 2) throw Error(`bad read ${read}`);
+		else return read;
 	}
 }

@@ -1,127 +1,159 @@
+const MAX_PENDING_TRANSFERS = 2;
+
+export type SerializedIso = {
+	isoData: ArrayBuffer;
+	isoPackets: Array<{
+		offset: number;
+		length: number;
+		status: USBTransferStatus;
+	}>;
+};
+
+export type WorkerInitMsg = {
+	type: "init";
+	dev: number;
+	devconf?: number;
+	iface: number;
+	altiface?: number;
+	endpt: number;
+	batchSize?: number;
+	packetSize?: number;
+	stream?: WritableStream<SerializedIso> | ReadableStream<SerializedIso>;
+};
+
+export type WorkerMsg =
+	| WorkerInitMsg
+	| { type: "start" }
+	| { type: "close" }
+	| { type: "abort"; reason?: string }
+	| { type: "terminate" };
+
 let dev: USBDevice;
+let devconf: USBConfiguration;
 let iface: USBInterface;
-let endP: USBEndpoint;
+let altiface: USBAlternateInterface;
+let endpt: USBEndpoint;
+
 let batchSize: number;
 let packetSize: number;
-let writable: WritableStream;
+
+let writable: WritableStream<SerializedIso>;
+let writer: WritableStreamDefaultWriter<SerializedIso>;
 
 let stopStream = false;
-
 let runningStream: Promise<void>;
 
-let makeReady: (value?: unknown) => void;
-const ready = new Promise((resolve) => {
-	makeReady = resolve;
-});
-
-self.addEventListener("message", async (event) => {
+self.addEventListener("message", async (event: { data: WorkerMsg }) => {
 	switch (event.data?.type) {
 		case "init": {
-			console.info("kinectWorker init", event);
-			const init = await initStream(event.data);
-			postMessage({ ...init, type: "init" });
-			makeReady();
+			postMessage(await configureWorker(event.data));
 			break;
 		}
 		case "start": {
-			console.info("kinectWorker start", event);
-			runningStream = isochronousStream();
-			break;
-		}
-		case "stop": {
-			console.info("kinectWorker stop", event);
-			stopStream = true;
+			writer = writable.getWriter();
+			runningStream = streamIsoTransfers();
 			break;
 		}
 		case "abort": {
-			console.error("kinectWorker abort", event);
-			stopStream = true;
-			writable?.abort(event.data?.reason);
+			writer.closed.finally(() => postMessage({ type: "terminate" }));
+			writer.abort(event.data?.reason);
 			break;
 		}
 		case "close": {
-			console.warn("kinectWorker close", event);
 			stopStream = true;
+			await runningStream;
+			writer.close();
 			break;
 		}
 		default: {
-			console.error("kinectWorker unknown", event);
+			console.error("Unknown message in kinectWorker", event);
+			throw TypeError("Unknown message type");
 		}
 	}
 });
 
-async function initStream(opt: {
-	device: number;
-	iFIdx?: number;
-	ePIdx: number;
-	batchSize?: number;
-	packetSize?: number;
-	// rome-ignore lint/suspicious/noExplicitAny: <explanation>
-	writable: WritableStream<any>;
-}) {
+async function claimInterface(
+	devIdx: number,
+	devconfNum?: number,
+	ifaceNum?: number,
+	altifaceNum?: number,
+	endptNum?: number,
+) {
 	const d = await navigator.usb.getDevices();
-	dev = d[opt.device];
+	dev = d[devIdx];
 	await dev.open();
-	await dev.selectConfiguration(1);
-	iface = dev.configuration!.interfaces[opt.iFIdx ?? 0];
-	// TODO: can other interfaces be simultaneously claimed by other workers?
-	await dev.claimInterface(opt.iFIdx ?? 0);
-	console.info("worker claimed interface", iface);
-	endP = iface.alternate.endpoints[opt.ePIdx ?? 0];
-	batchSize = opt.batchSize ?? 512;
-	packetSize = opt.packetSize ?? endP.packetSize;
-	writable = opt.writable;
+	if (devconfNum != null) await dev.selectConfiguration(devconfNum);
+	devconf = dev.configuration!;
+	iface = devconf.interfaces.find(
+		({ interfaceNumber }) => interfaceNumber === ifaceNum ?? 0,
+	)!;
+	await dev.claimInterface(iface.interfaceNumber);
+	if (altifaceNum != null)
+		await dev.selectAlternateInterface(iface.interfaceNumber, altifaceNum);
+	altiface = iface.alternate;
+
+	endpt = altiface.endpoints.find(
+		({ direction, endpointNumber }) =>
+			direction === "in" && endpointNumber === (endptNum ?? 0),
+	)!;
+
 	return {
-		device: opt.device,
-		iface: opt.iFIdx ?? 0,
-		endpoint: opt.ePIdx ?? 0,
+		device: devIdx,
+		devconf: devconf.configurationValue,
+		iface: iface.interfaceNumber,
+		altiface: iface.alternate.alternateSetting,
+		endpt: endpt.endpointNumber,
+		packetSize: endpt.packetSize,
+	};
+}
+
+async function configureWorker(opt: WorkerInitMsg) {
+	const claimed = await claimInterface(
+		opt.dev,
+		opt.devconf,
+		opt.iface,
+		opt.altiface,
+		opt.endpt,
+	);
+	batchSize = opt.batchSize ?? 256;
+	packetSize = opt.packetSize ?? claimed.packetSize;
+	writable = opt.stream as WritableStream<SerializedIso>;
+	return {
+		type: "init",
+		...claimed,
 		batchSize,
 		packetSize,
 	};
 }
-
-async function isochronousStream() {
-	const w = writable.getWriter();
-	let iterCount = 0;
-	let transferCount = 0;
-	while (!stopStream) {
-		iterCount++;
-		await Promise.all([
-			// TODO: apply backpressure at promise creation, not resolution
-			new Promise((resolve) => setTimeout(resolve, 57)),
-			w.ready,
-		]);
-
+async function streamIsoTransfers() {
+	let pendingTransfers = 0;
+	const requestIsoTransfer = () => {
+		pendingTransfers++;
 		dev
 			.isochronousTransferIn(
-				endP.endpointNumber + 1, // god damn it
+				endpt.endpointNumber,
 				Array(batchSize).fill(packetSize),
 			)
-			.then((r: USBIsochronousInTransferResult) => {
-				transferCount++;
-				w.write({
+			.then((r) => {
+				//TODO: can these arrive out-of-order? possible desync
+				writer.write({
 					isoData: r.data!.buffer,
-					isoPackets: r.packets.map((p: USBIsochronousInTransferPacket) => ({
+					isoPackets: r.packets.map((p) => ({
 						offset: p.data!.byteOffset,
 						length: p.data!.byteLength,
-						status: p.status,
+						status: p.status!,
 					})),
 				});
 			})
 			.catch((e) => {
-				console.error("transfer/write error", e);
 				stopStream = true;
-			});
-	}
-	console.warn("stopStream", { iterCount, transferCount });
-	w.ready
-		.then(async () => {
-			w.releaseLock();
-			await writable.close();
-			console.log("writable closed");
-			await dev.releaseInterface(iface.interfaceNumber);
-			await dev.close();
-			console.log("dev closed");
-		})
-		.catch((e) => console.error("error closing", e));
+				writer.abort(e);
+			})
+			.finally(() => pendingTransfers--);
+	};
+	await writer.ready;
+	while (!stopStream)
+		if (pendingTransfers < MAX_PENDING_TRANSFERS) requestIsoTransfer();
+		else await new Promise((r) => setTimeout(r, 15));
+	dev.releaseInterface(iface.interfaceNumber);
 }

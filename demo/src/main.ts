@@ -162,7 +162,7 @@ function setupDepthDemo(kinect: KinectDevice) {
 			const depthStream = await kinect.camera!.streamDepthFrames();
 			for await (const frame of depthStream) {
 				const colorMarch = window.performance.now() / 10;
-				const grayFrame = KinectCamera.unpackDepthFrame(frame!.buffer);
+				const grayFrame = KinectCamera.unpack11bitGray(frame);
 
 				// frame is 11bit/u16gray, expand for canvas rgba
 				const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
