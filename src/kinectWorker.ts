@@ -37,32 +37,33 @@ let endpt: USBEndpoint;
 let batchSize: number;
 let packetSize: number;
 
-let writable: WritableStream<SerializedIso>;
-let writer: WritableStreamDefaultWriter<SerializedIso>;
-
-let stopStream = false;
-let runningStream: Promise<void>;
+let runningStream: ReadableStream<SerializedIso>;
+let streamController: ReadableStreamDefaultController<SerializedIso>;
 
 self.addEventListener("message", async (event: { data: WorkerMsg }) => {
 	switch (event.data?.type) {
 		case "init": {
-			postMessage(await configureWorker(event.data));
+			const configured = await configureWorker(event.data);
+			runningStream = initStream();
+			postMessage(
+				{
+					...configured,
+					stream: runningStream,
+				},
+				[runningStream],
+			);
 			break;
 		}
 		case "start": {
-			writer = writable.getWriter();
-			runningStream = streamIsoTransfers();
 			break;
 		}
 		case "abort": {
-			writer.closed.finally(() => postMessage({ type: "terminate" }));
-			writer.abort(event.data?.reason);
+			runningStream.cancel(event.data.reason);
+			postMessage({ type: "terminate" });
 			break;
 		}
 		case "close": {
-			stopStream = true;
-			await runningStream;
-			writer.close();
+			streamController.close();
 			break;
 		}
 		default: {
@@ -117,7 +118,6 @@ async function configureWorker(opt: WorkerInitMsg) {
 	);
 	batchSize = opt.batchSize ?? 256;
 	packetSize = opt.packetSize ?? claimed.packetSize;
-	writable = opt.stream as WritableStream<SerializedIso>;
 	return {
 		type: "init",
 		...claimed,
@@ -125,35 +125,32 @@ async function configureWorker(opt: WorkerInitMsg) {
 		packetSize,
 	};
 }
-async function streamIsoTransfers() {
+
+function initStream() {
 	let pendingTransfers = 0;
-	const requestIsoTransfer = () => {
-		pendingTransfers++;
-		dev
-			.isochronousTransferIn(
-				endpt.endpointNumber,
-				Array(batchSize).fill(packetSize),
-			)
-			.then((r) => {
-				//TODO: can these arrive out-of-order? possible desync
-				writer.write({
-					isoData: r.data!.buffer,
-					isoPackets: r.packets.map((p) => ({
-						offset: p.data!.byteOffset,
-						length: p.data!.byteLength,
-						status: p.status!,
-					})),
-				});
-			})
-			.catch((e) => {
-				stopStream = true;
-				writer.abort(e);
-			})
-			.finally(() => pendingTransfers--);
-	};
-	await writer.ready;
-	while (!stopStream)
-		if (pendingTransfers < MAX_PENDING_TRANSFERS) requestIsoTransfer();
-		else await new Promise((r) => setTimeout(r, 15));
-	dev.releaseInterface(iface.interfaceNumber);
+	const isoTransfer = () =>
+		dev.isochronousTransferIn(
+			endpt.endpointNumber,
+			Array(batchSize).fill(packetSize),
+		);
+	const serializeIso = (r: USBIsochronousInTransferResult): SerializedIso => ({
+		isoData: r.data!.buffer,
+		isoPackets: r.packets.map((p) => ({
+			offset: p.data!.byteOffset,
+			length: p.data!.byteLength,
+			status: p.status!,
+		})),
+	});
+	return new ReadableStream<SerializedIso>({
+		pull(cont) {
+			if (pendingTransfers < MAX_PENDING_TRANSFERS) {
+				pendingTransfers++;
+				isoTransfer()
+					.then((r) => cont.enqueue(serializeIso(r)))
+					.catch((e) => cont.error(e))
+					.finally(() => pendingTransfers--);
+			}
+			return new Promise((r) => setTimeout(r, 20));
+		},
+	});
 }

@@ -137,12 +137,6 @@ export class KinectStream {
 	}
 
 	async initWorker() {
-		// TODO: proper backpressure, proper transforms
-		const { readable, writable } = new TransformStream<
-			SerializedIso,
-			SerializedIso
-		>(undefined, { highWaterMark: 2 }, { highWaterMark: 2 });
-
 		const workerInit: Promise<
 			WorkerInitMsg & { batchSize: number; packetSize: number }
 		> = new Promise((initReply) => {
@@ -162,23 +156,19 @@ export class KinectStream {
 			});
 		});
 
-		this.usbWorker.postMessage(
-			{
-				type: "init",
-				packetSize: this.packetSize,
-				dev: this.devIdx,
-				iface: this.ifaceNum,
-				endpt: this.endptNum,
-				stream: writable,
-			} as WorkerInitMsg,
-			[writable],
-		);
+		this.usbWorker.postMessage({
+			type: "init",
+			packetSize: this.packetSize,
+			dev: this.devIdx,
+			iface: this.ifaceNum,
+			endpt: this.endptNum,
+		} as WorkerInitMsg);
 
-		const { batchSize, packetSize, ...bus } = await workerInit;
+		const { batchSize, packetSize, stream, ...bus } = await workerInit;
 		this.batchSize = batchSize!;
 		this.packetSize = packetSize!;
 
-		return readable;
+		return stream as ReadableStream<SerializedIso>;
 	}
 
 	async *packets() {
