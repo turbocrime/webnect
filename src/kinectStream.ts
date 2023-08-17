@@ -39,6 +39,13 @@ enum StreamPacketType {
 	END = 0b101,
 }
 
+type ParsedPacket = {
+	pBody: ArrayBuffer;
+	pLoss: number;
+	startFrame: boolean;
+	endFrame: boolean;
+};
+
 export class KinectStream {
 	ifaceNum: number;
 	endptNum: number;
@@ -171,42 +178,61 @@ export class KinectStream {
 		return stream as ReadableStream<SerializedIso>;
 	}
 
-	async *packets() {
-		const workerIsoStream = await this.initWorker();
-		this.usbWorker.postMessage({ type: "start" } as WorkerMsg);
-		const r = workerIsoStream.getReader();
-		let sIso: ReadableStreamReadResult<SerializedIso>;
-		do {
-			sIso = await r.read();
-			debug?.stat("transfer boundary");
-			if (!sIso.value) continue; // TODO: identify possible cases
-			const { isoData, isoPackets } = sIso.value;
-			for (const p of isoPackets)
-				if (p.length)
-					yield this.parsePacket(new DataView(isoData, p.offset, p.length));
-		} while (!sIso.done);
-	}
+	async transform(isoStream: ReadableStream<SerializedIso>) {
+		// TODO: there's gotta be problems with the desync/resync logic now that iteration is decoupled
+		const packetTransformer = new TransformStream<SerializedIso, ParsedPacket>({
+			transform: async (sIso, controller) => {
+				if (!sIso) return;
+				const { isoData, isoPackets } = sIso;
+				for (const p of isoPackets)
+					if (p.length)
+						controller.enqueue(
+							this.parsePacket(new DataView(isoData, p.offset, p.length)),
+						);
+			},
+		});
 
-	async *frames() {
 		const frame = new Uint8Array(this.frameSize);
 		let frameIdx = 0;
 		const remaining = () => frame.byteLength - frameIdx;
-		for await (const pkt of this.packets()) {
-			const { pBody, pLoss, startFrame, endFrame } = pkt || { pLoss: 0 };
-			if (!pBody) continue;
-			if (remaining() < pLoss) yield frame.slice(0, frameIdx);
-			frameIdx += pLoss;
-			if (startFrame) frameIdx = 0;
-			if (remaining() < pBody.byteLength) this.desync("long frame");
-			if (this.sync) {
-				frame.set(new Uint8Array(pBody), frameIdx);
-				frameIdx += pBody.byteLength;
+		const frameTransformer = new TransformStream<ParsedPacket, ArrayBuffer>({
+			transform: async (pkt, controller) => {
+				if (!pkt) return;
+				const { pBody, pLoss, startFrame, endFrame } = pkt || { pLoss: 0 };
+				if (!pBody) return;
+				if (remaining() < pLoss) controller.enqueue(frame.slice(0, frameIdx));
+				frameIdx += pLoss;
+				if (startFrame) frameIdx = 0;
+				if (remaining() < pBody.byteLength) this.desync("long frame");
+				if (this.sync) {
+					frame.set(new Uint8Array(pBody), frameIdx);
+					frameIdx += pBody.byteLength;
+				}
+				if (endFrame) {
+					if (frameIdx < this.frameSize) this.desync("short frame");
+					if (this.sync) controller.enqueue(frame.buffer.slice(0, frameIdx));
+					frameIdx = 0;
+				}
+			},
+		});
+
+		return isoStream
+			.pipeThrough(packetTransformer)
+			.pipeThrough(frameTransformer);
+	}
+
+	async *frames() {
+		// TODO: emit stream to caller
+		const frameStream = await this.transform(await this.initWorker());
+		const reader = frameStream.getReader();
+		try {
+			while (true) {
+				const { value, done } = await reader.read();
+				if (done) return;
+				yield value;
 			}
-			if (endFrame) {
-				if (frameIdx < this.frameSize) this.desync("short frame");
-				if (this.sync) yield frame.buffer.slice(0, frameIdx);
-				frameIdx = 0;
-			}
+		} finally {
+			reader.releaseLock();
 		}
 	}
 }
