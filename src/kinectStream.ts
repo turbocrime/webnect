@@ -1,4 +1,8 @@
-import type { SerializedIso, WorkerMsg, WorkerInitMsg } from "./kinectWorker";
+import type {
+	SerializedUSBIsochronousTransferResult,
+	WorkerMsg,
+	WorkerInitMsg,
+} from "./kinectWorker";
 
 import {
 	CamFlagActive,
@@ -164,12 +168,17 @@ export class KinectStream {
 		this.batchSize = batchSize!;
 		this.packetSize = packetSize!;
 
-		return stream as ReadableStream<SerializedIso>;
+		return stream as ReadableStream<SerializedUSBIsochronousTransferResult>;
 	}
 
-	async transform(isoStream: ReadableStream<SerializedIso>) {
+	async transform(
+		isoStream: ReadableStream<SerializedUSBIsochronousTransferResult>,
+	) {
 		// TODO: there's gotta be problems with the desync/resync logic now that iteration is decoupled
-		const packetTransformer = new TransformStream<SerializedIso, ParsedPacket>({
+		const packetTransformer = new TransformStream<
+			SerializedUSBIsochronousTransferResult,
+			ParsedPacket
+		>({
 			transform: async (sIso, controller) => {
 				if (!sIso) return;
 				const { isoData, isoPackets } = sIso;

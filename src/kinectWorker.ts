@@ -1,6 +1,6 @@
 const MAX_PENDING_TRANSFERS = 2;
 
-export type SerializedIso = {
+export type SerializedUSBIsochronousTransferResult = {
 	isoData: ArrayBuffer;
 	isoPackets: Array<{
 		offset: number;
@@ -18,7 +18,9 @@ export type WorkerInitMsg = {
 	endpt: number;
 	batchSize?: number;
 	packetSize?: number;
-	stream?: WritableStream<SerializedIso> | ReadableStream<SerializedIso>;
+	stream?:
+		| WritableStream<SerializedUSBIsochronousTransferResult>
+		| ReadableStream<SerializedUSBIsochronousTransferResult>;
 };
 
 export type WorkerMsg =
@@ -37,8 +39,8 @@ let endpt: USBEndpoint;
 let batchSize: number;
 let packetSize: number;
 
-let runningStream: ReadableStream<SerializedIso>;
-let streamController: ReadableStreamDefaultController<SerializedIso>;
+let runningStream: ReadableStream<SerializedUSBIsochronousTransferResult>;
+let streamController: ReadableStreamDefaultController<SerializedUSBIsochronousTransferResult>;
 
 self.addEventListener("message", async (event: { data: WorkerMsg }) => {
 	switch (event.data?.type) {
@@ -133,7 +135,9 @@ function initStream() {
 			endpt.endpointNumber,
 			Array(batchSize).fill(packetSize),
 		);
-	const serializeIso = (r: USBIsochronousInTransferResult): SerializedIso => ({
+	const serializeIso = (
+		r: USBIsochronousInTransferResult,
+	): SerializedUSBIsochronousTransferResult => ({
 		isoData: r.data!.buffer,
 		isoPackets: r.packets.map((p) => ({
 			offset: p.data!.byteOffset,
@@ -141,7 +145,7 @@ function initStream() {
 			status: p.status!,
 		})),
 	});
-	return new ReadableStream<SerializedIso>({
+	return new ReadableStream<SerializedUSBIsochronousTransferResult>({
 		pull(cont) {
 			if (pendingTransfers < MAX_PENDING_TRANSFERS) {
 				pendingTransfers++;
