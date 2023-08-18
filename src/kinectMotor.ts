@@ -1,38 +1,18 @@
+import { MotorUsbControl, MotorLed, MotorServoState } from "./kinectEnum";
+
 export const MAX_TILT = 30;
 export const ACCEL = 819;
 
-enum MotorUsbControl {
-	SET_LED = 0x06,
-	SET_TILT = 0x31,
-	GET_STATE = 0x32,
-}
-
-export enum ServoMode {
-	IDLE = 0,
-	LIMIT = 1,
-	MOVING = 4,
-}
-
-export enum LedMode {
-	OFF = 0,
-	GREEN = 1,
-	RED = 2,
-	AMBER = 3,
-	BLINK_GREEN = 4,
-	ALSO_BLINK_GREEN = 5, // same as 4?
-	BLINK_RED_AMBER = 6,
-}
-
 export type MotorState = {
 	angle?: number; // raw, half-degrees
-	servo: ServoMode;
+	servo: MotorServoState;
 	accel: [number, number, number];
 };
 
 export class KinectMotor {
 	dev: USBDevice;
 	state?: MotorState;
-	led?: LedMode;
+	led?: MotorLed;
 
 	constructor(device: USBDevice) {
 		this.dev = device;
@@ -84,7 +64,7 @@ export class KinectMotor {
 		});
 	}
 
-	async cmdSetLed(led: LedMode) {
+	async cmdSetLed(led: MotorLed) {
 		return await this.dev.controlTransferOut({
 			requestType: "vendor",
 			recipient: "device",

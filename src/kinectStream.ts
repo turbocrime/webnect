@@ -1,10 +1,21 @@
 import type { SerializedIso, WorkerMsg, WorkerInitMsg } from "./kinectWorker";
 
-const debug = undefined;
-/*
+import {
+	CamFlagActive,
+	CamDepthFormat,
+	CamVisibleFormat,
+	CamIRFormat,
+	CamResolution,
+	StreamPacketSize,
+	StreamPacketType,
+	StreamUsbEndpoint,
+} from "./kinectEnum";
+
 const debug = {
 	s: Array(),
+	// rome-ignore lint/suspicious/noExplicitAny: <explanation>
 	stat: (s: any) => debug.s?.push(s),
+	// rome-ignore lint/suspicious/noExplicitAny: <explanation>
 	anomaly: (reason: string, etc?: any) => {
 		console.warn(reason, etc);
 		debug.s?.push({ anomaly: reason, ...(etc ?? {}) });
@@ -13,31 +24,9 @@ const debug = {
 		debug.s = Array();
 	},
 };
-*/
 
 const PKT_MAGIC = 0x5242;
 const HDR_SIZE = 12;
-
-enum StreamFrameSize {
-	// TODO: more modes
-	DEPTH_11B = (640 * 480 * 11) / 8,
-	DEPTH_10B = (640 * 480 * 10) / 8,
-}
-
-// endpoint specifies a larger max, but iso transfer sends these.
-// this size includes the 12-byte header.
-enum StreamPacketSize {
-	DEPTH = 1760,
-	VIDEO = 1920,
-}
-
-enum StreamPacketType {
-	DEPTH = 0b0111_0000,
-	VIDEO = 0b1000_0000,
-	START = 0b001,
-	MID = 0b010,
-	END = 0b101,
-}
 
 type ParsedPacket = {
 	pBody: ArrayBuffer;
@@ -52,7 +41,7 @@ export class KinectStream {
 	devIdx: number;
 
 	packetType: StreamPacketType;
-	frameSize: StreamFrameSize;
+	frameSize: number;
 	packetSize: StreamPacketSize;
 	batchSize: number;
 
@@ -67,7 +56,7 @@ export class KinectStream {
 		this.ifaceNum = ifaceNum;
 		this.endptNum = endptNum;
 
-		this.frameSize = StreamFrameSize.DEPTH_11B;
+		this.frameSize = (640 * 480 * 11) / 8;
 		this.packetType = StreamPacketType.DEPTH;
 		this.packetSize = StreamPacketSize.DEPTH;
 
