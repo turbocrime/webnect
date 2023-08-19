@@ -89,7 +89,7 @@ export enum CamIRFormat {
 export enum CamFlagActive {
 	VISIBLE = 0b001,
 	DEPTH = 0b010,
-	IR = 0b100,
+	IR = 0b011,
 }
 
 // Some res/video combos are incompatible, actual output res may vary.

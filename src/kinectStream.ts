@@ -1,8 +1,10 @@
-import type {
-	SerializedUSBIsochronousTransferResult,
-	WorkerMsg,
-	WorkerInitMsg,
-} from "./kinectWorker";
+import type { WorkerInitMsg } from "./kinectWorker";
+
+import {
+	SerializedUSBIsochronousInTransferResult,
+	PacketTransformer,
+	FrameTransformer,
+} from "./transformers";
 
 import {
 	CamFlagActive,
@@ -15,222 +17,205 @@ import {
 	StreamUsbEndpoint,
 } from "./kinectEnum";
 
-const debug = {
-	s: Array(),
-	// rome-ignore lint/suspicious/noExplicitAny: <explanation>
-	stat: (s: any) => debug.s?.push(s),
-	// rome-ignore lint/suspicious/noExplicitAny: <explanation>
-	anomaly: (reason: string, etc?: any) => {
-		console.warn(reason, etc);
-		debug.s?.push({ anomaly: reason, ...(etc ?? {}) });
-	},
-	reset: () => {
-		debug.s = Array();
-	},
+type TransferConfig = {
+	dev: number;
+	iface: number;
+	endpt: number;
+	devconf?: number;
+	altiface?: number;
+	batchSize: number;
+	packetSize: StreamPacketSize;
 };
 
-const PKT_MAGIC = 0x5242;
-const HDR_SIZE = 12;
+const DEFAULT_USB_IFACE = 0;
+const DEFAULT_USB_CONF = 1;
+const DEFAULT_USB_BATCH = 256;
+//const DEFAULT_USB_ALTERNATE = 0;
 
-type ParsedPacket = {
-	pBody: ArrayBuffer;
-	pLoss: number;
-	startFrame: boolean;
-	endFrame: boolean;
+type StreamMode = {
+	type: CamFlagActive;
+	res: CamResolution;
+	format: CamDepthFormat | CamVisibleFormat | CamIRFormat;
 };
+
+type WorkerInitReply = WorkerInitMsg & {
+	batchSize: number;
+	packetSize: number;
+	stream: ReadableStream<SerializedUSBIsochronousInTransferResult>;
+};
+
+/*
+const DEFAULT_CAM_MODE: StreamMode = {
+	type: CamFlagActive.DEPTH,
+	res: CamResolution.MED,
+	format: CamDepthFormat.D_11B,
+};
+*/
+
+const frameDimension = {
+	[CamResolution.LOW]: 320 * 240,
+	[CamResolution.MED]: 640 * 480,
+	[CamResolution.HIGH]: 1280 * 1024,
+};
+const irFrameDimension = {
+	...frameDimension,
+	[CamResolution.MED]: 640 * 488,
+};
+const bitsPerPixel = {
+	[(CamFlagActive.VISIBLE << 4) | CamVisibleFormat.BAYER_8B]: 8,
+	[(CamFlagActive.VISIBLE << 4) | CamVisibleFormat.YUV_16B]: 16,
+	[(CamFlagActive.DEPTH << 4) | CamDepthFormat.D_10B]: 10,
+	[(CamFlagActive.DEPTH << 4) | CamDepthFormat.D_11B]: 11,
+	[(CamFlagActive.IR << 4) | CamIRFormat.IR_10B]: 10,
+};
+
+const selectStreamConfig = ({ type, format, res }: StreamMode) =>
+	({
+		[CamFlagActive.VISIBLE]: {
+			packetSize: StreamPacketSize.VIDEO,
+			packetType: StreamPacketType.VIDEO,
+			frameSize: (frameDimension[res] * bitsPerPixel[(type << 4) | format]) / 8,
+		},
+		[CamFlagActive.DEPTH]: {
+			packetSize: StreamPacketSize.DEPTH,
+			packetType: StreamPacketType.DEPTH,
+			frameSize: (frameDimension[res] * bitsPerPixel[(type << 4) | format]) / 8,
+		},
+		[CamFlagActive.IR]: {
+			packetSize: StreamPacketSize.VIDEO,
+			packetType: StreamPacketType.VIDEO,
+			frameSize:
+				(irFrameDimension[res] * bitsPerPixel[(type << 4) | format]) / 8,
+		},
+	})[type];
+
+const selectTransferConfig = (
+	devIdx: number,
+	camMode: StreamMode,
+	usbOpt?: {
+		batchSize?: number;
+		devconf?: number;
+		altiface?: number;
+	},
+) => ({
+	batchSize: usbOpt?.batchSize ?? DEFAULT_USB_BATCH,
+	devconf: usbOpt?.devconf ?? DEFAULT_USB_CONF,
+	dev: devIdx,
+	iface: DEFAULT_USB_IFACE,
+	endpt:
+		camMode.type === CamFlagActive.DEPTH
+			? StreamUsbEndpoint.DEPTH
+			: StreamUsbEndpoint.VIDEO,
+});
 
 export class KinectStream {
-	ifaceNum: number;
-	endptNum: number;
-	devIdx: number;
+	transferConfig: {
+		dev: number;
+		iface: number;
+		endpt: number;
+		devconf?: number;
+		altiface?: number;
+		batchSize: number;
+		packetSize: StreamPacketSize;
+	};
+	streamConfig: {
+		packetType: StreamPacketType;
+		frameSize: number;
+		packetSize: StreamPacketSize;
+	};
 
-	packetType: StreamPacketType;
-	frameSize: number;
-	packetSize: StreamPacketSize;
-	batchSize: number;
-
-	sync: boolean;
-	time?: number;
-	seq: number;
+	ready: Promise<this>;
 
 	usbWorker: Worker;
+	workerStream?: ReadableStream<SerializedUSBIsochronousInTransferResult>;
 
-	constructor(devIdx: number, ifaceNum: number, endptNum: number) {
-		this.devIdx = devIdx;
-		this.ifaceNum = ifaceNum;
-		this.endptNum = endptNum;
-
-		this.frameSize = (640 * 480 * 11) / 8;
-		this.packetType = StreamPacketType.DEPTH;
-		this.packetSize = StreamPacketSize.DEPTH;
-
-		this.batchSize = 512;
-
-		this.sync = false;
-		this.seq = 0;
-
+	constructor(
+		devIdx: number,
+		camMode: StreamMode,
+		usbOpt?: {
+			devConf?: number;
+			altiface?: number;
+			batchSize?: number;
+		},
+	) {
+		this.streamConfig = selectStreamConfig(camMode);
+		this.transferConfig = {
+			...selectTransferConfig(devIdx, camMode, usbOpt),
+			packetSize: this.streamConfig.packetSize,
+		};
 		this.usbWorker = new Worker(new URL("./kinectWorker.ts", import.meta.url));
+		this.ready = this.initWorker();
 	}
 
 	close() {
-		this.usbWorker.postMessage({ type: "close" } as WorkerMsg);
+		this.usbWorker.postMessage({ type: "close" });
 	}
 
-	// rome-ignore lint/suspicious/noExplicitAny: desync for any reason
-	desync(reason: any) {
-		this.sync = false;
-		debug && console.error("desync", this.seq, reason, debug?.s);
-	}
-
-	resync(sequence: number) {
-		if (!this.sync) debug && console.debug("resync");
-		debug?.reset();
-		this.sync = true;
-		this.time = undefined;
-		this.seq = sequence;
-	}
-
-	parsePacket(pkt: DataView) {
-		if (!pkt) return;
-		if (pkt.byteLength < HDR_SIZE) return;
-		if (pkt.getUint16(0) !== PKT_MAGIC) return;
-
-		const pType: StreamPacketType = pkt.getUint8(3);
-		if (pType >> 4 !== this.packetType >> 4) return;
-
-		const pSeq = pkt.getUint8(5);
-
-		const pSize = pkt.getUint16(6);
-		if (pSize !== pkt.byteLength) return;
-
-		const pTime = pkt.getUint32(8);
-
-		const startFrame = pType === (this.packetType | StreamPacketType.START);
-		//const midFrame = pType === (this.packetType | KinectPacketType.MID);
-		const endFrame = pType === (this.packetType | StreamPacketType.END);
-
-		if (startFrame) this.resync(pSeq);
-		if (!this.sync) return;
-
-		let seqDelta = pSeq - this.seq;
-		if (seqDelta < 0) seqDelta += 256;
-		this.seq = pSeq;
-
-		const pLoss = seqDelta && (seqDelta - 1) * (this.packetSize - HDR_SIZE);
-		if (pLoss) debug?.anomaly("packet loss", { seqDelta, pLoss });
-
-		if (this.time && this.time !== pTime)
-			debug?.anomaly("timestamp", { time: this.time, pTime });
-		this.time = pTime;
-
-		debug?.stat({ pType, pLoss, pSeq, pTime, pSize });
-
-		return {
-			pBody: pkt.buffer.slice(
-				pkt.byteOffset + HDR_SIZE,
-				pkt.byteOffset + pSize,
-			),
-			pLoss,
-			startFrame,
-			endFrame,
-		};
+	abort() {
+		this.usbWorker.terminate();
 	}
 
 	async initWorker() {
-		const workerInit: Promise<
-			WorkerInitMsg & { batchSize: number; packetSize: number }
-		> = new Promise((initReply) => {
-			this.usbWorker.addEventListener("message", (event) => {
-				switch (event.data?.type) {
-					case "init":
-						initReply(event.data);
-						break;
-					case "terminate":
-						this.usbWorker.terminate();
-						break;
-					default:
-						console.error("Unknown message in kinectStream", event);
-						this.usbWorker.terminate();
-						throw TypeError("Unknown message type");
-				}
-			});
-		});
-
-		this.usbWorker.postMessage({
+		const requestConfig: WorkerInitMsg = {
 			type: "init",
-			packetSize: this.packetSize,
-			dev: this.devIdx,
-			iface: this.ifaceNum,
-			endpt: this.endptNum,
-		} as WorkerInitMsg);
+			...this.transferConfig,
+		};
 
-		const { batchSize, packetSize, stream, ...bus } = await workerInit;
-		this.batchSize = batchSize!;
-		this.packetSize = packetSize!;
-
-		return stream as ReadableStream<SerializedUSBIsochronousTransferResult>;
-	}
-
-	async transform(
-		isoStream: ReadableStream<SerializedUSBIsochronousTransferResult>,
-	) {
-		// TODO: there's gotta be problems with the desync/resync logic now that iteration is decoupled
-		const packetTransformer = new TransformStream<
-			SerializedUSBIsochronousTransferResult,
-			ParsedPacket
-		>({
-			transform: async (sIso, controller) => {
-				if (!sIso) return;
-				const { isoData, isoPackets } = sIso;
-				for (const p of isoPackets)
-					if (p.length)
-						controller.enqueue(
-							this.parsePacket(new DataView(isoData, p.offset, p.length)),
-						);
-			},
+		let handleInitConfig: (value: WorkerInitReply) => void;
+		const workerReady = new Promise<WorkerInitReply>((iR) => {
+			handleInitConfig = iR;
+		}).then((workerConfig: WorkerInitReply) => {
+			if (
+				Object.keys(requestConfig).reduce(
+					(acc, k) =>
+						acc ||
+						workerConfig[k as keyof WorkerInitMsg] !==
+							requestConfig[k as keyof WorkerInitMsg],
+					false,
+				)
+			)
+				console.warn("worker changed usb config", {
+					workerConfig,
+					requestConfig,
+				});
+			this.workerStream = workerConfig.stream;
+			this.transferConfig = workerConfig;
+			this.streamConfig.packetSize = workerConfig.packetSize;
 		});
 
-		const frame = new Uint8Array(this.frameSize);
-		let frameIdx = 0;
-		const remaining = () => frame.byteLength - frameIdx;
-		const frameTransformer = new TransformStream<ParsedPacket, ArrayBuffer>({
-			transform: async (pkt, controller) => {
-				if (!pkt) return;
-				const { pBody, pLoss, startFrame, endFrame } = pkt || { pLoss: 0 };
-				if (!pBody) return;
-				if (remaining() < pLoss) controller.enqueue(frame.slice(0, frameIdx));
-				frameIdx += pLoss;
-				if (startFrame) frameIdx = 0;
-				if (remaining() < pBody.byteLength) this.desync("long frame");
-				if (this.sync) {
-					frame.set(new Uint8Array(pBody), frameIdx);
-					frameIdx += pBody.byteLength;
-				}
-				if (endFrame) {
-					if (frameIdx < this.frameSize) this.desync("short frame");
-					if (this.sync) controller.enqueue(frame.buffer.slice(0, frameIdx));
-					frameIdx = 0;
-				}
-			},
-		});
-
-		return isoStream
-			.pipeThrough(packetTransformer)
-			.pipeThrough(frameTransformer);
-	}
-
-	async *frames() {
-		// TODO: emit stream to caller
-		const frameStream = await this.transform(await this.initWorker());
-		const reader = frameStream.getReader();
-		try {
-			while (true) {
-				const { value, done } = await reader.read();
-				if (done) return;
-				yield value;
+		this.usbWorker.addEventListener("message", (event) => {
+			switch (event.data?.type) {
+				case "init":
+					handleInitConfig(event.data);
+					break;
+				case "terminate":
+					console.warn("terminate message");
+					this.usbWorker.terminate();
+					break;
+				default:
+					console.error("Unknown message type in kinectStream", event);
+					throw TypeError(`Unknown message type ${event.data?.type}`);
 			}
-		} finally {
-			reader.releaseLock();
-		}
+		});
+
+		this.usbWorker.postMessage(requestConfig as WorkerInitMsg);
+		await workerReady;
+		return this;
+	}
+
+	async getWorkerStream() {
+		await this.ready;
+		return this.workerStream
+			?.pipeThrough(
+				new TransformStream(
+					new PacketTransformer(
+						this.streamConfig.packetType,
+						this.streamConfig.packetSize,
+					),
+				),
+			)
+			.pipeThrough(
+				new TransformStream(new FrameTransformer(this.streamConfig.frameSize)),
+			);
 	}
 }

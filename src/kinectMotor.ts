@@ -1,5 +1,7 @@
 import { MotorUsbControl, MotorLed, MotorServoState } from "./kinectEnum";
 
+const STATE_SIZE = 10;
+const GRAVITY = 9.80665;
 export const MAX_TILT = 30;
 export const ACCEL = 819;
 
@@ -7,6 +9,11 @@ export type MotorState = {
 	angle?: number; // raw, half-degrees
 	servo: MotorServoState;
 	accel: [number, number, number];
+};
+
+export const accelToG = (x: number, y: number, z: number) => {
+	const ag = ACCEL * GRAVITY;
+	return [x / ag, y / ag, z / ag];
 };
 
 export class KinectMotor {
@@ -18,13 +25,7 @@ export class KinectMotor {
 		this.dev = device;
 	}
 
-	static accelToG(x: number, y: number, z: number) {
-		const ag = ACCEL * 9.80665;
-		return [x / ag, y / ag, z / ag];
-	}
-
 	async cmdGetState() {
-		const STATE_SIZE_BYTES = 10;
 		const { data } = await this.dev.controlTransferIn(
 			{
 				requestType: "vendor",
@@ -33,7 +34,7 @@ export class KinectMotor {
 				value: 0,
 				index: 0,
 			},
-			STATE_SIZE_BYTES,
+			STATE_SIZE,
 		);
 
 		// TODO: validate header at data[0]

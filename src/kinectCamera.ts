@@ -1,89 +1,178 @@
 import { KinectStream } from "./kinectStream";
 
 import {
+	CamUsbControl,
 	CamUsbCommand,
 	CamRegAddr,
 	CamFPS,
 	CamDepthFormat,
+	CamVisibleFormat,
+	CamIRFormat,
 	CamFlagActive,
 	CamResolution,
-	CamUsbControl,
 } from "./kinectEnum";
 
 const CAM_USB_INTERFACE = 0;
 const CAM_USB_ENDPOINT_VIDEO = 1;
 const CAM_USB_ENDPOINT_DEPTH = 2;
-
 const MAGIC_OUT = 0x4d47;
 const MAGIC_IN = 0x4252;
 const HDR_SIZE = 8;
 
 const OFF = 0;
 
-type CamMode = {
+export type CamMode = {
 	fps: CamFPS;
 	res: CamResolution;
 	depth?: CamDepthFormat;
-	//visible?: CamModeVisible;
-	//ir?: CamModeIR;
+	visible?: CamVisibleFormat;
+	ir?: CamIRFormat;
 };
+
+type CamVisibleMode = CamMode & { visible: CamVisibleFormat };
+type CamDepthMode = CamMode & { depth: CamDepthFormat };
+type CamIRMode = CamMode & { ir: CamIRFormat };
 
 export class KinectCamera {
 	dev: USBDevice;
+	devIdx?: number;
 
 	tag: number;
 
-	//visibleStream?: KinectStream;
-	//irStream?: KinectStream;
-	depthStream?: KinectStream;
+	kinectStreamHandler?: KinectStream;
+	depthStream?: ReadableStream<ArrayBuffer>;
+	videoStream?: ReadableStream<ArrayBuffer>;
+
 	mode: CamMode;
 
 	constructor(device: USBDevice) {
 		this.dev = device;
 		this.tag = 1;
 		this.mode = {
-			// arbitrary default
-			depth: CamDepthFormat.D_11B,
 			fps: CamFPS.F_30P,
 			res: CamResolution.MED,
 		};
+		navigator.usb.getDevices().then((devs) => {
+			this.devIdx = devs.indexOf(this.dev);
+		});
+	}
+
+	async initDepthStream() {
+		this.mode.depth ??= CamDepthFormat.D_11B;
+		this.mode.depth = CamDepthFormat.D_10B;
+		this.mode.fps ??= CamFPS.F_30P;
+		this.mode.res ??= CamResolution.MED;
+		const { depth, res, fps } = this.mode;
+
+		//await this.writeRegister(CamRegAddr.PROJECTOR, OFF);
+		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF);
+
+		await this.writeRegister(CamRegAddr.DEPTH_FORMAT, depth);
+		await this.writeRegister(CamRegAddr.DEPTH_RES, res);
+		await this.writeRegister(CamRegAddr.DEPTH_FPS, fps);
+		//await this.writeRegister(CamRegAddr.DEPTH_FLIP, OFF);
+
+		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, CamFlagActive.DEPTH);
+
+		this.kinectStreamHandler = new KinectStream(this.devIdx!, {
+			type: CamFlagActive.DEPTH,
+			format: depth,
+			res,
+		});
+
+		this.depthStream = await this.kinectStreamHandler.getWorkerStream();
+
+		return this.depthStream;
+	}
+
+	async initVisibleStream() {
+		this.mode.visible ??= CamVisibleFormat.BAYER_8B;
+		this.mode.fps ??= CamFPS.F_30P;
+		this.mode.res ??= CamResolution.MED;
+		const { visible, res, fps } = this.mode;
+		await this.writeRegister(CamRegAddr.VIDEO_ACTIVE, OFF);
+
+		await this.writeRegister(CamRegAddr.VISIBLE_FORMAT, visible);
+		await this.writeRegister(CamRegAddr.VISIBLE_RES, res);
+		await this.writeRegister(CamRegAddr.VISIBLE_FPS, fps);
+
+		await this.writeRegister(CamRegAddr.VIDEO_ACTIVE, CamFlagActive.VISIBLE);
+		this.kinectStreamHandler = new KinectStream(this.devIdx!, {
+			type: CamFlagActive.VISIBLE,
+			format: visible,
+			res,
+		});
+		this.videoStream = await this.kinectStreamHandler.getWorkerStream();
+		return this.videoStream;
+	}
+
+	async initIRStream() {
+		this.mode.ir ??= CamIRFormat.IR_10B;
+		this.mode.fps ??= CamFPS.F_30P;
+		this.mode.res ??= CamResolution.MED;
+		const { ir, res, fps } = this.mode;
+		await this.writeRegister(CamRegAddr.VIDEO_ACTIVE, OFF);
+
+		//await this.writeRegister(CamRegAddr.IR_FORMAT, ir);
+		await this.writeRegister(CamRegAddr.IR_RES, res);
+		await this.writeRegister(CamRegAddr.IR_FPS, fps);
+
+		await this.writeRegister(CamRegAddr.VIDEO_ACTIVE, CamFlagActive.IR);
+		this.kinectStreamHandler = new KinectStream(this.devIdx!, {
+			type: CamFlagActive.IR,
+			format: ir,
+			res,
+		});
+		this.videoStream = await this.kinectStreamHandler.getWorkerStream();
+		return this.videoStream;
 	}
 
 	async endDepthStream() {
 		this.mode.depth = undefined;
 		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF);
-		this.depthStream?.close();
+		this.depthStream?.cancel();
 		this.depthStream = undefined;
 	}
 
-	async initDepthStream() {
-		this.mode.depth ??= CamDepthFormat.D_11B;
-		this.mode.fps ??= CamFPS.F_30P;
-		this.mode.res ??= CamResolution.MED;
-
-		await this.writeRegister(CamRegAddr.PROJECTOR, OFF);
-		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, OFF);
-
-		await this.writeRegister(CamRegAddr.DEPTH_FORMAT, this.mode.depth);
-		await this.writeRegister(CamRegAddr.DEPTH_RES, this.mode.res);
-		await this.writeRegister(CamRegAddr.DEPTH_FPS, this.mode.fps);
-		await this.writeRegister(CamRegAddr.DEPTH_FLIP, OFF);
-
-		await this.writeRegister(CamRegAddr.DEPTH_ACTIVE, CamFlagActive.DEPTH);
+	async *depthFrames() {
+		if (!this.depthStream) throw Error("depth stream not initialized");
+		const r = this.depthStream.getReader();
+		while (true) {
+			const frame = await r.read();
+			if (frame.done) break;
+			yield frame.value;
+		}
+		r.releaseLock();
 	}
 
-	async *streamDepthFrames() {
-		await this.initDepthStream();
-
-		const devIdx = await navigator.usb
-			.getDevices()
-			.then((devs) => devs.indexOf(this.dev));
-		this.depthStream = new KinectStream(
-			devIdx,
-			CAM_USB_INTERFACE,
-			CAM_USB_ENDPOINT_DEPTH,
-		);
-		yield* this.depthStream.frames();
+	async *videoFrames() {
+		if (!this.videoStream) throw Error("video stream not initialized");
+		const r = this.videoStream.getReader();
+		while (true) {
+			const frame = await r.read();
+			if (frame.done) break;
+			yield frame.value;
+		}
+		r.releaseLock();
+	}
+	static unpack10bitGray(frame: ArrayBuffer) {
+		const src = new Uint8Array(frame);
+		const dest = new Uint16Array(640 * 480);
+		let window = 0;
+		let bits = 0;
+		let s = 0;
+		let d = 0;
+		while (s < src.length) {
+			while (bits < 10 && s < src.length) {
+				window = (window << 8) | src[s++];
+				bits += 8;
+			}
+			if (bits < 10) break;
+			bits -= 10;
+			dest[d++] = window >> bits;
+			window &= (1 << bits) - 1;
+		}
+		return dest;
 	}
 
 	static unpack11bitGray(frame: ArrayBuffer) {

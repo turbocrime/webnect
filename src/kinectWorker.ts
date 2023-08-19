@@ -1,13 +1,6 @@
-const MAX_PENDING_TRANSFERS = 2;
+import { SerializedUSBIsochronousInTransferResult } from "./transformers";
 
-export type SerializedUSBIsochronousTransferResult = {
-	isoData: ArrayBuffer;
-	isoPackets: Array<{
-		offset: number;
-		length: number;
-		status: USBTransferStatus;
-	}>;
-};
+const MAX_PENDING_TRANSFERS = 2;
 
 export type WorkerInitMsg = {
 	type: "init";
@@ -19,13 +12,12 @@ export type WorkerInitMsg = {
 	batchSize?: number;
 	packetSize?: number;
 	stream?:
-		| WritableStream<SerializedUSBIsochronousTransferResult>
-		| ReadableStream<SerializedUSBIsochronousTransferResult>;
+		| WritableStream<SerializedUSBIsochronousInTransferResult>
+		| ReadableStream<SerializedUSBIsochronousInTransferResult>;
 };
 
 export type WorkerMsg =
 	| WorkerInitMsg
-	| { type: "start" }
 	| { type: "close" }
 	| { type: "abort"; reason?: string }
 	| { type: "terminate" };
@@ -39,8 +31,8 @@ let endpt: USBEndpoint;
 let batchSize: number;
 let packetSize: number;
 
-let runningStream: ReadableStream<SerializedUSBIsochronousTransferResult>;
-let streamController: ReadableStreamDefaultController<SerializedUSBIsochronousTransferResult>;
+let runningStream: ReadableStream<SerializedUSBIsochronousInTransferResult>;
+let streamController: ReadableStreamDefaultController<SerializedUSBIsochronousInTransferResult>;
 
 self.addEventListener("message", async (event: { data: WorkerMsg }) => {
 	switch (event.data?.type) {
@@ -54,9 +46,6 @@ self.addEventListener("message", async (event: { data: WorkerMsg }) => {
 				},
 				[runningStream],
 			);
-			break;
-		}
-		case "start": {
 			break;
 		}
 		case "abort": {
@@ -101,7 +90,7 @@ async function claimInterface(
 	)!;
 
 	return {
-		device: devIdx,
+		dev: devIdx,
 		devconf: devconf.configurationValue,
 		iface: iface.interfaceNumber,
 		altiface: iface.alternate.alternateSetting,
@@ -137,7 +126,7 @@ function initStream() {
 		);
 	const serializeIso = (
 		r: USBIsochronousInTransferResult,
-	): SerializedUSBIsochronousTransferResult => ({
+	): SerializedUSBIsochronousInTransferResult => ({
 		isoData: r.data!.buffer,
 		isoPackets: r.packets.map((p) => ({
 			offset: p.data!.byteOffset,
@@ -145,7 +134,7 @@ function initStream() {
 			status: p.status!,
 		})),
 	});
-	return new ReadableStream<SerializedUSBIsochronousTransferResult>({
+	return new ReadableStream<SerializedUSBIsochronousInTransferResult>({
 		pull(cont) {
 			if (pendingTransfers < MAX_PENDING_TRANSFERS) {
 				pendingTransfers++;
@@ -154,7 +143,7 @@ function initStream() {
 					.catch((e) => cont.error(e))
 					.finally(() => pendingTransfers--);
 			}
-			return new Promise((r) => setTimeout(r, 20));
+			return new Promise((r) => setTimeout(r, 5));
 		},
 	});
 }

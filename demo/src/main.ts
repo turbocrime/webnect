@@ -126,9 +126,9 @@ function setupDepthDemo(kinect: KinectDevice) {
 		document.querySelector<HTMLCanvasElement>("#depthCanvas")!;
 	const depthCtx = depthCanvas.getContext("2d")!;
 
+	// calculate fullscreen center crop
 	const canvasAspect = 640 / 480;
 	const screenAspect = screen.width / screen.height;
-	// center crop fullscreen
 	const fsWidth = screenAspect > canvasAspect ? 640 : screenAspect * 480;
 	const fsHeight = screenAspect > canvasAspect ? 640 / screenAspect : 480;
 	const fsZeroX = -((640 - fsWidth) / 2);
@@ -159,32 +159,127 @@ function setupDepthDemo(kinect: KinectDevice) {
 	const runStream = async () => {
 		try {
 			depthStreamCb.checked = true;
-			const depthStream = await kinect.camera!.streamDepthFrames();
-			for await (const frame of depthStream) {
-				const colorMarch = window.performance.now() / 10;
-				const grayFrame = KinectCamera.unpack11bitGray(frame);
 
-				// frame is 11bit/u16gray, expand for canvas rgba
-				const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
-				for (let i = 0; i < grayFrame.length; i++) {
-					const pixel16 = grayFrame[i];
+			const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
 
-					// this counts as art
-					rgbaFrame[i * 4 + 0] = ((pixel16 << 1) + colorMarch) & 0xff;
-					rgbaFrame[i * 4 + 1] = ((pixel16 << 2) + colorMarch) & 0xff;
-					rgbaFrame[i * 4 + 2] = ((pixel16 << 3) + colorMarch) & 0xff;
+			// rome-ignore lint/style/useConst: <explanation>
+			let mode = "ir";
 
-					rgbaFrame[i * 4 + 3] = pixel16 < 2047 ? 0xff : 0;
+			if (mode === "depth") {
+				const depthStream = await kinect.camera!.initDepthStream();
+				for await (const frame of kinect.camera!.depthFrames()) {
+					// frame is 11bit/u16gray, expand for canvas rgba
+					const grayFrame = KinectCamera.unpack10bitGray(frame);
+
+					// moving color ramps
+					const colorMarch = window.performance.now() / 10;
+					for (
+						let i = 0;
+						i < grayFrame.length && i * 4 < rgbaFrame.length;
+						i++
+					) {
+						const grayPixel = grayFrame[i];
+
+						// this counts as art
+						rgbaFrame[i * 4 + 0] = ((grayPixel << 1) + colorMarch) & 0xff;
+						rgbaFrame[i * 4 + 1] = ((grayPixel << 2) + colorMarch) & 0xff;
+						rgbaFrame[i * 4 + 2] = ((grayPixel << 3) + colorMarch) & 0xff;
+						rgbaFrame[i * 4 + 3] = grayPixel < 1023 ? 0xff : 0;
+					}
+					const drawFrame = new ImageData(rgbaFrame, 640, 480);
+					if (document.fullscreenElement)
+						depthCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
+					else depthCtx.putImageData(drawFrame, 0, 0);
 				}
+			}
 
-				const drawFrame = new ImageData(rgbaFrame, 640, 480);
-				if (document.fullscreenElement)
-					depthCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
-				else depthCtx.putImageData(drawFrame, 0, 0);
+			if (mode === "video") {
+				const bayerStream = await kinect.camera!.initVisibleStream();
+				const [height, width] = [480, 640];
+				const p = (x: number, y: number) => {
+					const p = y * width + x;
+					if (p < 0) return 0;
+					if (p > 640 * 480) return 640 * 480;
+					return p;
+				};
+				for await (const f of kinect.camera!.videoFrames()) {
+					const bayer = new Uint8Array(f);
+					for (let y = 0; y < height; y++) {
+						for (let x = 0; x < width; x++) {
+							let i = p(x, y);
+							if ((x + y) % 2 === 0) {
+								// Green pixel (even row, even column)
+								const [r, g] = i % 2 ? [2, 0] : [0, 2];
+								rgbaFrame[i * 4 + r] =
+									(bayer[p(x - 1, y)] + bayer[p(x + 1, y)]) / 2; // R
+								rgbaFrame[i * 4 + 1] = bayer[i]; // G
+								rgbaFrame[i * 4 + g] =
+									(bayer[p(x, y - 1)] + bayer[p(x, y + 1)]) / 2; // B
+							} else if (y % 2) {
+								// Blue pixel
+								rgbaFrame[i * 4 + 0] =
+									(bayer[p(x - 1, y - 1)] +
+										bayer[p(x + 1, y + 1)] +
+										bayer[p(x + 1, y - 1)] +
+										bayer[p(x - 1, y + 1)]) /
+									4; // R
+								rgbaFrame[i * 4 + 1] =
+									(bayer[p(x - 1, y)] +
+										bayer[p(x + 1, y)] +
+										bayer[p(x, y - 1)] +
+										bayer[p(x, y + 1)]) /
+									4; // G
+								rgbaFrame[i * 4 + 2] = bayer[i]; // B
+							} else {
+								// Red pixel
+								rgbaFrame[i * 4 + 0] = bayer[i]; // R
+								rgbaFrame[i * 4 + 1] =
+									(bayer[p(x - 1, y)] +
+										bayer[p(x + 1, y)] +
+										bayer[p(x, y - 1)] +
+										bayer[p(x, y + 1)]) /
+									4; // G
+								rgbaFrame[i * 4 + 2] =
+									(bayer[p(x - 1, y - 1)] +
+										bayer[p(x + 1, y + 1)] +
+										bayer[p(x + 1, y - 1)] +
+										bayer[p(x - 1, y + 1)]) /
+									4; // R
+							}
+							rgbaFrame[i * 4 + 3] = 255; // Alpha channel, fully opaque
+						}
+					}
+
+					const drawFrame = new ImageData(rgbaFrame, 640, 480);
+					if (document.fullscreenElement)
+						depthCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
+					else depthCtx.putImageData(drawFrame, 0, 0);
+				}
+			}
+
+			if (mode === "ir") {
+				const videoStream = await kinect.camera!.initIRStream();
+				for await (const f of kinect.camera!.videoFrames()) {
+					const frame = KinectCamera.unpack10bitGray(f);
+					const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
+					for (let i = 0; i < frame.length; i++) {
+						const pixel = frame[i];
+						rgbaFrame[i * 4 + 0] = pixel;
+						rgbaFrame[i * 4 + 1] = pixel;
+						rgbaFrame[i * 4 + 2] = pixel;
+						rgbaFrame[i * 4 + 3] = 0xff;
+					}
+					const drawFrame = new ImageData(rgbaFrame, 640, 480);
+					if (document.fullscreenElement)
+						depthCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
+					else depthCtx.putImageData(drawFrame, 0, 0);
+				}
 			}
 		} catch (e) {
+			console.error("depthStream failed", e);
 			cameraDemo.disabled = true;
 			cameraDemo.classList.add("disabled");
+			throw e;
 		}
 	};
 
@@ -245,7 +340,7 @@ function setupMotorDemo(kinect: KinectDevice) {
 					const { angle, servo, accel } = motorState;
 					angleDisplay.textContent = String(angle);
 					servoDisplay.textContent = String(servoModes[servo]);
-					accelDisplay.textContent = String(accel); //.join(", ");
+					accelDisplay.textContent = String(accel);
 				},
 			)
 			.catch(() => {
