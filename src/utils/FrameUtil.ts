@@ -1,4 +1,4 @@
-export const streamToGenerator = async function* (
+const streamToGenerator = async function* (
 	streamOrReader: ReadableStream | ReadableStreamDefaultReader,
 ) {
 	const reader =
@@ -16,7 +16,7 @@ export const streamToGenerator = async function* (
 	}
 };
 
-export const unpackGray = (bitDepth: number, frame: ArrayBuffer) => {
+const unpackGray = (bitDepth: number, frame: ArrayBuffer) => {
 	const src = new Uint8Array(frame);
 	const dest = new Uint16Array(src.byteLength / (bitDepth / 8));
 	let window = 0;
@@ -36,7 +36,7 @@ export const unpackGray = (bitDepth: number, frame: ArrayBuffer) => {
 	return dest;
 };
 
-export const grayToRgba = (frame: ArrayBuffer, bitDepth = 11) => {
+const grayToRgba = (frame: ArrayBuffer, bitDepth = 11) => {
 	const invalid = (1 << bitDepth) - 1;
 	const shift = bitDepth - 8;
 	const src = new Uint16Array(frame);
@@ -52,17 +52,13 @@ export const grayToRgba = (frame: ArrayBuffer, bitDepth = 11) => {
 	return dest;
 };
 
-export const unpack10bitGrayToRgba = (frame: ArrayBuffer) =>
+const unpack10bitGrayToRgba = (frame: ArrayBuffer) =>
 	grayToRgba(unpackGray(10, frame), 10);
 
-export const unpack11bitGrayToRgba = (frame: ArrayBuffer) =>
+const unpack11bitGrayToRgba = (frame: ArrayBuffer) =>
 	grayToRgba(unpackGray(11, frame), 11);
 
-export const bayerToRgba = (
-	frame: ArrayBuffer,
-	width: number,
-	height: number,
-) => {
+const bayerToRgba = (frame: ArrayBuffer, width: number, height: number) => {
 	const bayer = new Uint8Array(frame);
 	const rgba = new Uint8ClampedArray(width * height * 4);
 
@@ -141,11 +137,7 @@ const yuvPixelToRgbaPixel = (y: number, u: number, v: number) =>
 		255,
 	]);
 
-export const uyvyToRgba = (
-	rawBuf: ArrayBuffer,
-	width: number,
-	height: number,
-) => {
+const uyvyToRgba = (rawBuf: ArrayBuffer, width: number, height: number) => {
 	const uyvy = new Uint8Array(rawBuf);
 	const rgba = new Uint8ClampedArray(width * height * 4);
 	let rgbaI = 0;
@@ -160,4 +152,15 @@ export const uyvyToRgba = (
 	}
 
 	return rgba;
+};
+
+export default {
+	streamToGenerator,
+	unpackGray,
+	grayToRgba,
+	unpack10bitGrayToRgba,
+	unpack11bitGrayToRgba,
+	bayerToRgba,
+	yuvPixelToRgbaPixel,
+	uyvyToRgba,
 };

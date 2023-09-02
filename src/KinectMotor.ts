@@ -1,4 +1,4 @@
-import { MotorUsbControl, MotorLed, MotorServoState } from "./enums";
+import { MotorUsbControl, MotorLed, MotorServoState } from "./MotorEnums";
 
 const MOTOR_STATE_SIZE = 10;
 const GRAVITY = 9.80665;
@@ -17,7 +17,7 @@ export const accelToG = (x: number, y: number, z: number) => {
 	return [x / ag, y / ag, z / ag];
 };
 
-export class KinectMotor {
+export default class KinectMotor {
 	dev: USBDevice;
 	state?: MotorState;
 	led?: MotorLed;

@@ -12,7 +12,7 @@ import {
 	CamUsbEndpoint,
 	CamIsoPacketFlag,
 	CamIsoPacketSize,
-} from "../kinect/enums";
+} from "../CameraEnums";
 
 export type KinectCameraWorkerOpts = {
 	dev: number;

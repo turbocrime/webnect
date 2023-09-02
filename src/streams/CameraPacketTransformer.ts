@@ -1,4 +1,4 @@
-import { CamIsoPacketFlag } from "../kinect/enums";
+import { CamIsoPacketFlag } from "../CameraEnums";
 
 export type SerializedUSBIsochronousInTransferResult = {
 	serialized: true;
@@ -42,7 +42,7 @@ type CamPacketHeader = {
 const CAMERA_PACKET_MAGIC = 0x5242;
 const CAMERA_PACKET_HEADER_SIZE = 12;
 
-export class CameraPacketTransformer
+export default class CameraPacketTransformer
 	implements
 		Transformer<
 			USBIsochronousInTransferResult | SerializedUSBIsochronousInTransferResult,

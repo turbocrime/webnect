@@ -3,40 +3,8 @@ export const OFF = 0 as OFF;
 export type ON = 1;
 export const ON = 1 as ON;
 
-export enum KinectVendorId {
-	MICROSOFT = 0x045e,
-}
-
-export enum KinectProductId {
-	NUI_MOTOR = 0x02b0,
-	NUI_CAMERA = 0x02ae,
-	NUI_AUDIO = 0x02ad,
-}
-
 export enum CamUsbControl {
 	CAMERA = 0x00,
-}
-
-export enum MotorUsbControl {
-	SET_LED = 0x06,
-	SET_TILT = 0x31,
-	GET_STATE = 0x32,
-}
-
-export enum MotorServoState {
-	IDLE = 0,
-	LIMIT = 1,
-	MOVING = 4,
-}
-
-export enum MotorLed {
-	OFF = 0,
-	GREEN = 1,
-	RED = 2,
-	AMBER = 3,
-	BLINK_GREEN = 4,
-	BLINK_GREEN_TOO = 5,
-	BLINK_RED_AMBER = 6,
 }
 
 export enum CamUsbCommand {
@@ -51,12 +19,12 @@ export enum CamOption {
 	// register addresses
 	PROJECTOR_CYCLE = 0x105,
 
-	VIDEO_ACTIVE = 0x05, // VISIBLE | IR
+	VIDEO_ACTIVE = 0x05, // VIS | IR
 	DEPTH_ACTIVE = 0x06, // DEPTH
 
-	VISIBLE_FORMAT = 0x0c,
-	VISIBLE_RES = 0x0d,
-	VISIBLE_FPS = 0x0e,
+	VIS_FORMAT = 0x0c,
+	VIS_RES = 0x0d,
+	VIS_FPS = 0x0e,
 
 	DEPTH_FORMAT = 0x12,
 	DEPTH_RES = 0x13,
@@ -69,7 +37,7 @@ export enum CamOption {
 	IR_FPS = 0x1b,
 
 	DEPTH_FLIP = 0x17,
-	VISIBLE_FLIP = 0x47,
+	VIS_FLIP = 0x47,
 	IR_FLIP = 0x48,
 }
 
@@ -78,22 +46,22 @@ export enum CamFPS {
 	F_30P = 30,
 }
 
-export enum CamDepthFormat {
+export enum CamFormatDepth {
 	D_11B = 0b11,
 	D_10B = 0b10,
 }
 
-export enum CamVisibleFormat {
+export enum CamFormatVisible {
 	BAYER_8B = 0x00,
 	YUV_16B = 0x05,
 }
 
-export enum CamIRFormat {
+export enum CamFormatInfrared {
 	IR_10B = 0x00,
 }
 
 export enum CamType {
-	VISIBLE = 0b001,
+	VIS = 0b001,
 	DEPTH = 0b010,
 	IR = 0b011,
 }

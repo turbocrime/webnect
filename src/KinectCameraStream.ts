@@ -1,13 +1,13 @@
 import type { KinectCameraMode } from "./KinectCamera";
 
-import type { CamPacket } from "../streams/CameraPacketTransformer";
+import type { CamPacket } from "./streams/CameraPacketTransformer";
 
 import {
 	CameraFrameTransformer,
 	selectFrameSize,
-} from "../streams/CameraFrameTransformer";
+} from "./streams/CameraFrameTransformer";
 
-import { OFF } from "./enums";
+import { OFF } from "./CameraEnums";
 
 export class KinectCameraStream {
 	private _packets?: ReadableStream<CamPacket>;

@@ -1,63 +1,69 @@
 import type {
 	KinectCameraWorkerInitConfig,
 	KinectCameraWorkerInitReply,
-} from "../workers/KinectCameraWorker";
+} from "./workers/KinectCameraWorker";
 
 import { KinectCameraStream } from "./KinectCameraStream";
 
-import { getDeviceIndex } from "../utils/DeviceUtil";
-
 import {
-	CamUsbControl,
-	CamUsbCommand,
-	CamUsbEndpoint,
-	CamOption,
 	CamFPS,
-	CamDepthFormat,
-	CamVisibleFormat,
-	CamIRFormat,
-	CamType,
+	CamFormatDepth,
+	CamFormatInfrared,
+	CamFormatVisible,
+	CamOption,
 	CamResolution,
+	CamType,
+	CamUsbCommand,
+	CamUsbControl,
+	CamUsbEndpoint,
 	OFF,
 	ON,
-} from "./enums";
+} from "./CameraEnums";
 
 export type KinectCameraMode = {
 	stream: CamType | OFF;
-	format: CamDepthFormat | CamVisibleFormat | CamIRFormat;
+	format: CamFormatDepth | CamFormatVisible | CamFormatInfrared;
 	res: CamResolution;
 	fps: CamFPS;
 	flip: ON | OFF;
 };
 
+const CAMERA_COMMAND_MAGIC_OUT = 0x4d47;
+const CAMERA_COMMAND_MAGIC_IN = 0x4252;
+const CAMERA_COMMAND_HEADER_SIZE = 8; // bytes
+
 export const DEFAULT_MODE_VISIBLE = {
-	stream: CamType.VISIBLE,
-	format: CamVisibleFormat.BAYER_8B,
+	stream: CamType.VIS,
+	format: CamFormatVisible.BAYER_8B,
 	res: CamResolution.MED,
 	flip: OFF,
 	fps: CamFPS.F_30P,
-} as const;
+};
 
 export const DEFAULT_MODE_INFRARED = {
 	stream: CamType.IR,
-	format: CamIRFormat.IR_10B,
+	format: CamFormatInfrared.IR_10B,
 	res: CamResolution.MED,
 	flip: OFF,
 	fps: CamFPS.F_30P,
-} as const;
+};
 
 export const DEFAULT_MODE_DEPTH = {
 	stream: CamType.DEPTH,
-	format: CamDepthFormat.D_11B,
+	format: CamFormatDepth.D_11B,
 	res: CamResolution.MED,
 	flip: OFF,
 	fps: CamFPS.F_30P,
-} as const;
+};
 
 type SingleMode = Partial<KinectCameraMode> & { stream: CamType | OFF };
 type SomeModes = Partial<Record<CamUsbEndpoint, SingleMode>>;
+export type CamModeOpt = SingleMode | SomeModes;
 
-export class KinectCamera {
+const getDeviceIndex = (d: USBDevice) =>
+	navigator.usb.getDevices().then((ds) => ds.indexOf(d));
+
+export default class KinectCamera {
 	dev: USBDevice;
 
 	[CamUsbEndpoint.DEPTH]: KinectCameraStream;
@@ -69,7 +75,7 @@ export class KinectCamera {
 
 	ready: Promise<void>;
 
-	constructor(dev: USBDevice, cameraMode?: SingleMode | SomeModes) {
+	constructor(dev: USBDevice, cameraMode?: CamModeOpt) {
 		this.cmdTag = 1;
 
 		this.dev = dev;
@@ -92,22 +98,22 @@ export class KinectCamera {
 	}
 
 	async initWorker() {
-		let handleInitReply: (value: KinectCameraWorkerInitReply) => void;
-		let rejectInitReply: () => void;
+		let handleInit: (value: KinectCameraWorkerInitReply) => void;
+		let rejectInit: () => void;
 		const workerReply = new Promise<KinectCameraWorkerInitReply>(
 			(resolve, reject) => {
-				handleInitReply = resolve;
-				rejectInitReply = reject;
+				handleInit = resolve;
+				rejectInit = reject;
 			},
 		);
 
 		this.usbWorker.addEventListener("message", (event) => {
 			switch (event.data?.type) {
 				case "init":
-					handleInitReply(event.data);
+					handleInit(event.data);
 					break;
 				default:
-					rejectInitReply();
+					rejectInit();
 					console.error("Unknown message from worker, killing it", event);
 					this.usbWorker.terminate();
 					throw TypeError(`Unknown message type ${event.data?.type}`);
@@ -128,11 +134,11 @@ export class KinectCamera {
 	}
 
 	parseModeOpts(
-		modeOpt = {} as SingleMode | SomeModes,
+		modeOpt = {} as CamModeOpt,
 		useDefaults = false,
 	): Record<CamUsbEndpoint, KinectCameraMode> {
 		const defaults = {
-			[CamType.VISIBLE]: DEFAULT_MODE_VISIBLE,
+			[CamType.VIS]: DEFAULT_MODE_VISIBLE,
 			[CamType.IR]: DEFAULT_MODE_INFRARED,
 			[CamType.DEPTH]: DEFAULT_MODE_DEPTH,
 		};
@@ -169,10 +175,7 @@ export class KinectCamera {
 					[CamUsbEndpoint.VIDEO]: this[CamUsbEndpoint.VIDEO].mode,
 					...getUpdatedMode(CamUsbEndpoint.DEPTH, modeOpt),
 				});
-			else if (
-				modeOpt.stream === CamType.VISIBLE ||
-				modeOpt.stream === CamType.IR
-			)
+			else if (modeOpt.stream === CamType.VIS || modeOpt.stream === CamType.IR)
 				this.parseModeOpts({
 					[CamUsbEndpoint.DEPTH]: this[CamUsbEndpoint.DEPTH].mode,
 					...getUpdatedMode(CamUsbEndpoint.VIDEO, modeOpt),
@@ -182,13 +185,15 @@ export class KinectCamera {
 				...getUpdatedMode(CamUsbEndpoint.VIDEO, modeOpt[CamUsbEndpoint.VIDEO]),
 				...getUpdatedMode(CamUsbEndpoint.DEPTH, modeOpt[CamUsbEndpoint.DEPTH]),
 			} as Record<CamUsbEndpoint, KinectCameraMode>;
+
+		// fallback
 		return this.parseModeOpts({
-			[CamUsbEndpoint.VIDEO]: { stream: OFF },
-			[CamUsbEndpoint.DEPTH]: defaults[CamType.DEPTH],
+			[CamUsbEndpoint.VIDEO]: DEFAULT_MODE_INFRARED,
+			[CamUsbEndpoint.DEPTH]: DEFAULT_MODE_DEPTH,
 		});
 	}
 
-	async setMode(modeOpt?: SingleMode | SomeModes) {
+	async setMode(modeOpt?: CamModeOpt) {
 		const modes = this.parseModeOpts(modeOpt);
 		this[CamUsbEndpoint.VIDEO].mode = modes[CamUsbEndpoint.VIDEO];
 		this[CamUsbEndpoint.DEPTH].mode = modes[CamUsbEndpoint.DEPTH];
@@ -217,11 +222,11 @@ export class KinectCamera {
 			await this.writeRegister(CamOption.VIDEO_ACTIVE, OFF);
 
 			switch (stream) {
-				case CamType.VISIBLE: {
-					await this.writeRegister(CamOption.VISIBLE_FORMAT, format);
-					await this.writeRegister(CamOption.VISIBLE_RES, res);
-					await this.writeRegister(CamOption.VISIBLE_FPS, fps);
-					await this.writeRegister(CamOption.VISIBLE_FLIP, flip);
+				case CamType.VIS: {
+					await this.writeRegister(CamOption.VIS_FORMAT, format);
+					await this.writeRegister(CamOption.VIS_RES, res);
+					await this.writeRegister(CamOption.VIS_FPS, fps);
+					await this.writeRegister(CamOption.VIS_FLIP, flip);
 					break;
 				}
 				case CamType.IR: {
@@ -238,21 +243,17 @@ export class KinectCamera {
 	}
 
 	async command(cmdId: CamUsbCommand, content: Uint16Array) {
-		const MAGIC_OUT = 0x4d47;
-		const MAGIC_IN = 0x4252;
-		const HEADER_SIZE = 8; // bytes
-
 		const cmd = new Uint16Array(
-			new ArrayBuffer(HEADER_SIZE + content.byteLength),
+			new ArrayBuffer(CAMERA_COMMAND_HEADER_SIZE + content.byteLength),
 		);
-		cmd.set([MAGIC_OUT, content.length, cmdId, this.cmdTag]);
-		cmd.set(content, HEADER_SIZE / cmd.BYTES_PER_ELEMENT);
+		cmd.set([CAMERA_COMMAND_MAGIC_OUT, content.length, cmdId, this.cmdTag]);
+		cmd.set(content, CAMERA_COMMAND_HEADER_SIZE / cmd.BYTES_PER_ELEMENT);
 
 		const rCmd = new Uint16Array(await this.controlOutIn(cmd.buffer));
 		const [rMagic, rLength, rCmdId, rTag, ...rContent] = rCmd;
 
 		if (
-			rMagic !== MAGIC_IN ||
+			rMagic !== CAMERA_COMMAND_MAGIC_IN ||
 			rLength !== rContent.length ||
 			rCmdId !== cmdId ||
 			rTag !== this.cmdTag

@@ -1,15 +1,14 @@
 import type { CamPacket } from "./CameraPacketTransformer";
-
-import type { KinectCameraMode } from "../kinect/KinectCamera";
+import type { KinectCameraMode } from "../KinectCamera";
 
 import {
 	CamResolution,
 	CamType,
-	CamVisibleFormat,
-	CamDepthFormat,
-	CamIRFormat,
+	CamFormatVisible,
+	CamFormatDepth,
+	CamFormatInfrared,
 	OFF,
-} from "../kinect/enums";
+} from "../CameraEnums";
 
 // TODO: throw on invalid mode
 export const selectFrameSize = ({
@@ -29,14 +28,14 @@ export const selectFrameSize = ({
 	};
 
 	const bitsPerPixel = {
-		[(CamType.VISIBLE << 4) | CamVisibleFormat.BAYER_8B]: 8,
-		[(CamType.VISIBLE << 4) | CamVisibleFormat.YUV_16B]: 16,
-		[(CamType.DEPTH << 4) | CamDepthFormat.D_10B]: 10,
-		[(CamType.DEPTH << 4) | CamDepthFormat.D_11B]: 11,
-		[(CamType.IR << 4) | CamIRFormat.IR_10B]: 10,
+		[(CamType.VIS << 4) | CamFormatVisible.BAYER_8B]: 8,
+		[(CamType.VIS << 4) | CamFormatVisible.YUV_16B]: 16,
+		[(CamType.DEPTH << 4) | CamFormatDepth.D_10B]: 10,
+		[(CamType.DEPTH << 4) | CamFormatDepth.D_11B]: 11,
+		[(CamType.IR << 4) | CamFormatInfrared.IR_10B]: 10,
 	};
 	switch (stream) {
-		case CamType.VISIBLE:
+		case CamType.VIS:
 			return (frameDimension[res] * bitsPerPixel[(stream << 4) | format]) / 8;
 		case CamType.DEPTH:
 			return (frameDimension[res] * bitsPerPixel[(stream << 4) | format]) / 8;
@@ -49,7 +48,7 @@ export const selectFrameSize = ({
 	}
 };
 
-export class CameraFrameTransformer
+export default class CameraFrameTransformer
 	implements Transformer<CamPacket, ArrayBuffer>
 {
 	frameSize: number;
