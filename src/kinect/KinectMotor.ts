@@ -1,8 +1,9 @@
-import { MotorUsbControl, MotorLed, MotorServoState } from "./kinectEnum";
+import { MotorUsbControl, MotorLed, MotorServoState } from "./enums";
 
-const STATE_SIZE = 10;
+const MOTOR_STATE_SIZE = 10;
 const GRAVITY = 9.80665;
-export const MAX_TILT = 30;
+
+export const MOTOR_MAX_TILT = 30;
 export const ACCEL = 819;
 
 export type MotorState = {
@@ -34,7 +35,7 @@ export class KinectMotor {
 				value: 0,
 				index: 0,
 			},
-			STATE_SIZE,
+			MOTOR_STATE_SIZE,
 		);
 
 		// TODO: validate header at data[0]
@@ -55,18 +56,18 @@ export class KinectMotor {
 		return this.state;
 	}
 
-	async cmdSetTilt(angle: number) {
-		return await this.dev.controlTransferOut({
+	cmdSetTilt(angle: number) {
+		return this.dev.controlTransferOut({
 			requestType: "vendor",
 			recipient: "device",
 			request: MotorUsbControl.SET_TILT,
-			value: angle % MAX_TILT, // crude limit
+			value: angle % MOTOR_MAX_TILT, // crude limit
 			index: 0,
 		});
 	}
 
-	async cmdSetLed(led: MotorLed) {
-		return await this.dev.controlTransferOut({
+	cmdSetLed(led: MotorLed) {
+		return this.dev.controlTransferOut({
 			requestType: "vendor",
 			recipient: "device",
 			request: MotorUsbControl.SET_LED,
