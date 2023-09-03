@@ -2,6 +2,28 @@ const DEFAULT_BATCH_SIZE = 256;
 const DEFAULT_PULL_RATE_LIMIT = 5;
 const DEFAULT_MAX_PENDING_TRANSFERS = 2;
 
+export type SerializedUSBIsochronousInTransferResult = {
+	readonly serialized: true;
+	readonly data: ArrayBuffer;
+	readonly packets: {
+		readonly byteOffset: number;
+		readonly byteLength: number;
+		readonly status: USBTransferStatus;
+	}[];
+};
+
+export const serializeIso = (
+	r: USBIsochronousInTransferResult,
+): SerializedUSBIsochronousInTransferResult => ({
+	serialized: true,
+	data: r.data!.buffer,
+	packets: r.packets.map((p) => ({
+		byteOffset: p.data!.byteOffset,
+		byteLength: p.data!.byteLength,
+		status: p.status!,
+	})),
+});
+
 type UnderlyingIsochronousSourceOptions = {
 	batchSize?: number;
 	pullRateLimit?: number;
@@ -43,9 +65,11 @@ export class UnderlyingIsochronousSource
 		this.maxPendingTransfers = maxPendingTransfers;
 	}
 
-	pull = (
-		cont: ReadableStreamDefaultController<USBIsochronousInTransferResult>,
-	) => {
+	start(cont: ReadableStreamDefaultController) {
+		Array(this.maxPendingTransfers).forEach(() => this.pull(cont));
+	}
+
+	pull = (cont: ReadableStreamDefaultController) => {
 		if (this.pendingTransfers < this.maxPendingTransfers) {
 			this.pendingTransfers++;
 			this.device
@@ -53,7 +77,7 @@ export class UnderlyingIsochronousSource
 					this.endpointNumber,
 					Array(this.batchSize).fill(this.packetSize),
 				)
-				.then((r) => cont.enqueue(r))
+				.then((r) => cont.enqueue(serializeIso(r)))
 				.catch((e) => cont.error(e))
 				.finally(() => this.pendingTransfers--);
 		}

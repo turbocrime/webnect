@@ -50,20 +50,17 @@
     <legend>
       <h2>Camera</h2>
     </legend>
-    <button id="fsButton">Fullscreen</button>
+    <button id="videoFsBtn">FullscreenVideo</button>
     <label>
-      <input type="checkbox" id="camActive"></input>Camera Stream
+      <input type="checkbox" id="videoActive"></input>Video Stream
     </label>
-    <select id="camMode">
-      <option value="depth">Depth</option>
+    <select id="videoMode">
       <option value="ir">Infrared</option>
+      <option value="depth">Depth</option>
       <option value="visible">Visible</option>
     </select>
     <div class="canvasBack">
       <canvas id="videoCanvas" width="640" height="480"></canvas>
-    </div>
-    <div class="canvasBack">
-      <canvas id="depthCanvas" width="640" height="480"></canvas>
     </div>
   </fieldset>
 

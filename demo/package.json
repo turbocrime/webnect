@@ -9,7 +9,7 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
-		"@webnect/webnect": "workspace:../"
+		"@webnect/webnect/": "workspace:../"
 	},
 	"devDependencies": {
 		"@types/node": "^20.4.4",

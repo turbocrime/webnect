@@ -1,10 +1,6 @@
 import { MotorUsbControl, MotorLed, MotorServoState } from "./MotorEnums";
 
-const MOTOR_STATE_SIZE = 10;
-const GRAVITY = 9.80665;
-
-export const MOTOR_MAX_TILT = 30;
-export const ACCEL = 819;
+export * from "./MotorEnums";
 
 export type MotorState = {
 	angle?: number; // raw, half-degrees
@@ -12,12 +8,16 @@ export type MotorState = {
 	accel: [number, number, number];
 };
 
+export const MOTOR_MAX_TILT = 30;
+const MOTOR_STATE_SIZE = 10;
+const GRAVITY = 9.80665;
+const ACCEL = 819;
+
 export const accelToG = (x: number, y: number, z: number) => {
 	const ag = ACCEL * GRAVITY;
 	return [x / ag, y / ag, z / ag];
 };
-
-export default class KinectMotor {
+export class KinectMotor {
 	dev: USBDevice;
 	state?: MotorState;
 	led?: MotorLed;

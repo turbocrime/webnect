@@ -1,12 +1,20 @@
 export const usbSupport = typeof navigator?.usb?.getDevices === "function";
 if (!usbSupport) console.error("WebUSB supported not detected!");
 
-import KinectCamera from "./KinectCamera";
-import KinectMotor from "./KinectMotor";
+import { KinectCamera } from "./KinectCamera";
+import { KinectMotor } from "./KinectMotor";
 
-import { KinectProductId, KinectVendorId } from "./DeviceEnums";
+export enum KinectVendorId {
+	MICROSOFT = 0x045e,
+}
 
-const claimNuiCamera = async (d?: USBDevice): Promise<KinectCamera> => {
+export enum KinectProductId {
+	NUI_MOTOR = 0x02b0,
+	NUI_CAMERA = 0x02ae,
+	NUI_AUDIO = 0x02ad,
+}
+
+export const claimNuiCamera = async (d?: USBDevice): Promise<USBDevice> => {
 	const dev =
 		d ||
 		(await navigator.usb.requestDevice({
@@ -17,12 +25,13 @@ const claimNuiCamera = async (d?: USBDevice): Promise<KinectCamera> => {
 				},
 			],
 		}));
-	//await dev.open();
-	//await dev.selectConfiguration(1);
-	return new KinectCamera(dev);
+	await dev.open();
+	await dev.reset();
+	await dev.selectConfiguration(1);
+	return dev;
 };
 
-const claimNuiMotor = async (d?: USBDevice): Promise<KinectMotor> => {
+export const claimNuiMotor = async (d?: USBDevice): Promise<USBDevice> => {
 	const dev =
 		d ||
 		(await navigator.usb.requestDevice({
@@ -33,27 +42,10 @@ const claimNuiMotor = async (d?: USBDevice): Promise<KinectMotor> => {
 				},
 			],
 		}));
-	return new KinectMotor(dev);
+	return dev;
 };
 
-export default {
-	claimNuiCamera,
-	claimNuiMotor,
-	KinectProductId,
-	KinectVendorId,
-};
-
-export { default as KinectMotor } from "./KinectMotor";
-export { MotorLed, MotorServoState } from "./MotorEnums";
-export { default as KinectCamera } from "./KinectCamera";
-export type { KinectCameraMode, CamModeOpt } from "./KinectCamera";
-export {
-	CamFormatDepth,
-	CamFPS,
-	CamFormatInfrared,
-	CamResolution,
-	CamType,
-	CamFormatVisible,
-	OFF,
-	ON,
-} from "./CameraEnums";
+export * from "./KinectMotor";
+export * from "./KinectCamera";
+export * from "./util/index";
+export * from "./stream/index";

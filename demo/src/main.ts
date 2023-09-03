@@ -1,13 +1,20 @@
 import "./style.css";
 
 import {
-	KinectDevice,
+	claimNuiCamera,
+	claimNuiMotor,
+	KinectCamera,
+	KinectMotor,
 	KinectProductId,
 	usbSupport,
+	readAsGenerator,
 	unpackGray,
-	unpack10bitGrayToRgba,
+	unpackGrayToRgba,
 	bayerToRgba,
-	streamToGenerator,
+	DEFAULT_MODE_VISIBLE,
+	DEFAULT_MODE_DEPTH,
+	DEFAULT_MODE_INFRARED,
+	CamIsoEndpoint,
 } from "@webnect/webnect";
 
 if (usbSupport) document.getElementById("annoying")!.remove();
@@ -72,11 +79,6 @@ const updateExistingUsb = async () => {
 };
 
 function setupKinect(requestUsbBtn: HTMLButtonElement) {
-	const activateDemos = (k: KinectDevice) => {
-		if (k.motor) setupMotorDemo(k);
-		if (k.camera) setupCameraDemo(k);
-	};
-
 	if (existingUsb.length) {
 		renderExistingUsb();
 		const devicesArg: {
@@ -97,7 +99,8 @@ function setupKinect(requestUsbBtn: HTMLButtonElement) {
 					break;
 			}
 		});
-		new KinectDevice(devicesArg).ready.then(activateDemos);
+		if (devicesArg.camera) setupCameraDemo(devicesArg.camera as USBDevice);
+		if (devicesArg.motor) setupMotorDemo(devicesArg.motor as USBDevice);
 	}
 
 	requestUsbBtn.addEventListener("click", () => {
@@ -108,26 +111,24 @@ function setupKinect(requestUsbBtn: HTMLButtonElement) {
 		};
 		if (!(motor || camera || audio))
 			return alert("Select at least one device.");
-		new KinectDevice({ motor, camera, audio }).ready
-			.then(activateDemos)
-			.then(updateExistingUsb);
+		if (motor) claimNuiMotor().then(setupMotorDemo);
+		if (camera) claimNuiCamera().then(setupCameraDemo);
 	});
 }
 
 setupKinect(document.querySelector<HTMLButtonElement>("#connectUsb")!);
 
-function setupCameraDemo(kinect: KinectDevice) {
+function setupCameraDemo(cameraDevice: USBDevice) {
+	cameraDevice.open();
+	const camera = new KinectCamera(cameraDevice);
 	const cameraDemo =
 		document.querySelector<HTMLFieldSetElement>("#cameraDemo")!;
 	cameraDemo.hidden = false;
 	cameraDemo.disabled = false;
 	cameraDemo.classList.remove("disabled");
 
-	const camActiveCb = document.querySelector<HTMLInputElement>("#camActive")!;
-
-	const depthCanvas =
-		document.querySelector<HTMLCanvasElement>("#depthCanvas")!;
-	const depthCanvas2dCtx = depthCanvas.getContext("2d")!;
+	const videoActiveCb =
+		document.querySelector<HTMLInputElement>("#videoActive")!;
 
 	const videoCanvas =
 		document.querySelector<HTMLCanvasElement>("#videoCanvas")!;
@@ -141,18 +142,14 @@ function setupCameraDemo(kinect: KinectDevice) {
 	const fsZeroX = -((640 - fsWidth) / 2);
 	const fsZeroY = -((480 - fsHeight) / 2);
 
-	const camModeOption = document.querySelector<HTMLOptionElement>("#camMode")!;
-	camModeOption.addEventListener("change", async () => {
-		if (camActiveCb.checked) {
+	const videoModeOption =
+		document.querySelector<HTMLOptionElement>("#videoMode")!;
+	videoModeOption.addEventListener("change", async () => {
+		if (videoActiveCb.checked) {
 			await endStream();
 			await new Promise((r) => setTimeout(r, 200));
 			await runStream();
 		}
-	});
-
-	const depthFsBtn = document.querySelector<HTMLButtonElement>("#depthFsBtn")!;
-	depthFsBtn.addEventListener("click", () => {
-		depthCanvas.requestFullscreen();
 	});
 
 	const videoFsBtn = document.querySelector<HTMLButtonElement>("#videoFsBtn")!;
@@ -163,8 +160,6 @@ function setupCameraDemo(kinect: KinectDevice) {
 	let wakeLock: WakeLockSentinel;
 	document.addEventListener("fullscreenchange", async () => {
 		if (document.fullscreenElement) {
-			depthCanvas.width = fsWidth;
-			depthCanvas.height = fsHeight;
 			videoCanvas.width = fsWidth;
 			videoCanvas.height = fsHeight;
 			try {
@@ -173,8 +168,6 @@ function setupCameraDemo(kinect: KinectDevice) {
 				console.warn("wakeLock failed");
 			}
 		} else {
-			depthCanvas.width = 640;
-			depthCanvas.height = 480;
 			videoCanvas.width = 640;
 			videoCanvas.height = 480;
 			wakeLock?.release();
@@ -186,14 +179,15 @@ function setupCameraDemo(kinect: KinectDevice) {
 	const runStream = async () => {
 		breakStreamLoop = false;
 		try {
-			camActiveCb.checked = true;
+			videoActiveCb.checked = true;
 
-			switch (camModeOption.value) {
+			switch (videoModeOption.value) {
 				case "depth": {
-					await kinect.camera?.ready;
-					const depthStream = await kinect.camera?.startStream()!;
+					await camera.ready;
+					await camera.setMode(DEFAULT_MODE_DEPTH);
+					const depthStream = camera.depth;
 					const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
-					for await (const frame of streamToGenerator(depthStream)) {
+					for await (const frame of readAsGenerator(depthStream)) {
 						if (breakStreamLoop) break;
 						// frame is 11bit/u16gray, expand for canvas rgba
 						const grayFrame = unpackGray(11, frame);
@@ -215,31 +209,23 @@ function setupCameraDemo(kinect: KinectDevice) {
 						}
 						const drawFrame = new ImageData(rgbaFrame, 640, 480);
 						if (document.fullscreenElement)
-							depthCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
-						else depthCanvas2dCtx.putImageData(drawFrame, 0, 0);
+							videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
+						else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
 					}
 					break;
 				}
 
 				case "visible": {
-					await kinect.camera?.ready;
-					await kinect.camera!.videoMode({
-						stream: 1,
-						format: 0,
-						res: 1,
-						fps: 30,
-						flip: 0,
-					})!;
-					const videoStream = kinect.camera?.getStream("VIDEO")!;
-					await kinect.camera?.usbStartStream("VISIBLE");
-					for await (const bayerBuf of streamToGenerator(videoStream)) {
+					await camera.ready;
+					await camera.setMode({
+						[CamIsoEndpoint.DEPTH]: { stream: 0 },
+						[CamIsoEndpoint.VIDEO]: DEFAULT_MODE_VISIBLE,
+					});
+					const videoStream = camera.video;
+					for await (const bayerBuf of readAsGenerator(videoStream)) {
 						if (breakStreamLoop) break;
 						const bayer = new Uint8Array(bayerBuf);
-						const drawFrame = new ImageData(
-							bayerToRgba(bayer, 640, 480),
-							640,
-							480,
-						);
+						const drawFrame = new ImageData(bayerToRgba(640, 480, bayer), 640);
 						if (document.fullscreenElement)
 							videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
 						else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
@@ -248,16 +234,15 @@ function setupCameraDemo(kinect: KinectDevice) {
 				}
 
 				case "ir": {
-					await kinect.camera?.ready;
-					const videoStream = kinect.camera?.getStream("VIDEO")!;
-					await kinect.camera?.usbStartStream("VISIBLE");
-					for await (const irBuf of streamToGenerator(videoStream)) {
+					await camera.ready;
+					await camera.setMode({
+						[CamIsoEndpoint.DEPTH]: { stream: 0 },
+						[CamIsoEndpoint.VIDEO]: DEFAULT_MODE_INFRARED,
+					});
+					const videoStream = camera.video;
+					for await (const irBuf of readAsGenerator(videoStream)) {
 						if (breakStreamLoop) break;
-						const drawFrame = new ImageData(
-							unpack10bitGrayToRgba(irBuf),
-							640,
-							480,
-						);
+						const drawFrame = new ImageData(unpackGrayToRgba(10, irBuf), 640);
 						if (document.fullscreenElement)
 							videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
 						else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
@@ -276,20 +261,22 @@ function setupCameraDemo(kinect: KinectDevice) {
 	};
 
 	const endStream = async () => {
-		camActiveCb.checked = false;
+		videoActiveCb.checked = false;
 		breakStreamLoop = true;
-		await kinect.camera?.usbEndStream();
+		await camera.setMode({ stream: 0 });
 		videoCanvas2dCtx.clearRect(0, 0, 640, 480);
 	};
 
-	camActiveCb.addEventListener("change", () =>
-		camActiveCb.checked ? runStream() : endStream(),
+	videoActiveCb.addEventListener("change", () =>
+		videoActiveCb.checked ? runStream() : endStream(),
 	);
 
 	runStream();
 }
 
-function setupMotorDemo(kinect: KinectDevice) {
+function setupMotorDemo(motorDevice: USBDevice) {
+	motorDevice.open();
+	const motor = new KinectMotor(motorDevice);
 	const motorDemo = document.querySelector<HTMLFieldSetElement>("#motorDemo")!;
 	motorDemo.hidden = false;
 	motorDemo.disabled = false;
@@ -304,7 +291,7 @@ function setupMotorDemo(kinect: KinectDevice) {
 	const ledInput = document.querySelector<HTMLInputElement>("#ledInput")!;
 	ledInput.addEventListener("click", () => {
 		ledMode = (ledMode + 1) % 4;
-		kinect.motor?.cmdSetLed(ledMode);
+		motor?.cmdSetLed(ledMode);
 		const [styleColor, nameColor] = ledModes[ledMode];
 		ledInput.textContent = `LED is ${nameColor}`;
 		ledInput.style.background = styleColor;
@@ -318,12 +305,12 @@ function setupMotorDemo(kinect: KinectDevice) {
 	const tiltInput = document.querySelector<HTMLInputElement>("#tiltInput")!;
 	tiltInput.addEventListener("change", () => {
 		const angle = parseInt(tiltInput.value);
-		kinect.motor!.cmdSetTilt(angle);
+		motor!.cmdSetTilt(angle);
 	});
 
 	setInterval(() => {
-		kinect
-			.motor!.cmdGetState()
+		motor!
+			.cmdGetState()
 			.then(
 				(motorState: {
 					angle?: number;

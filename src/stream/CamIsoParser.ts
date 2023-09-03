@@ -1,94 +1,70 @@
-import { CamIsoPacketFlag } from "../CameraEnums";
+import { CamIsoPacketFlag, CamMagic } from "../CamEnums";
+import { SerializedUSBIsochronousInTransferResult } from "./UnderlyingIsochronousSource";
 
-export type SerializedUSBIsochronousInTransferResult = {
-	serialized: true;
-	data: ArrayBuffer;
-	packets: Array<{
-		byteOffset: number;
-		byteLength: number;
-		status: USBTransferStatus;
-	}>;
-};
-
-export const serializeIso = (
-	r: USBIsochronousInTransferResult,
-): SerializedUSBIsochronousInTransferResult =>
-	({
-		serialized: true,
-		data: r.data!.buffer,
-		packets: r.packets.map((p) => ({
-			byteOffset: p.data!.byteOffset,
-			byteLength: p.data!.byteLength,
-			status: p.status!,
-		})),
-	}) as const;
-
-export type CamPacket = {
+export type CamIsoPacket = {
 	stream: CamIsoPacketFlag;
 	startFrame: boolean;
 	endFrame: boolean;
 	loss: number;
-	header: CamPacketHeader;
+	header: CamIsoPacketHeader;
 	body: ArrayBuffer;
 };
 
-type CamPacketHeader = {
+type CamIsoPacketHeader = {
 	pType: number;
 	pSeq: number;
 	pSize: number;
 	pTime: number;
 };
 
-const CAMERA_PACKET_MAGIC = 0x5242;
-const CAMERA_PACKET_HEADER_SIZE = 12;
+const PKT_HEADER_SIZE = 12;
 
-export default class CameraPacketTransformer
+export class CamIsoParser
 	implements
 		Transformer<
 			USBIsochronousInTransferResult | SerializedUSBIsochronousInTransferResult,
-			CamPacket
+			CamIsoPacket
 		>
 {
 	seq: number;
 	packetSize: number;
-	packetType: CamIsoPacketFlag;
+	packetFlag: CamIsoPacketFlag;
 
-	constructor(packetType: CamIsoPacketFlag, packetSize: number) {
-		this.packetType = packetType;
+	constructor(packetFlag: CamIsoPacketFlag, packetSize: number) {
 		this.seq = 0;
 		this.packetSize = packetSize;
+		this.packetFlag = packetFlag;
 	}
 
 	transform(
 		chunk:
 			| USBIsochronousInTransferResult
 			| SerializedUSBIsochronousInTransferResult,
-		c: TransformStreamDefaultController<CamPacket>,
+		c: TransformStreamDefaultController<CamIsoPacket>,
 	) {
 		if ("serialized" in chunk) {
-			// serialized usb transfer result
+			// a serialized usb transfer result
 			const { packets, data } = chunk;
 			for (const p of packets) {
-				if (p.status !== "ok") continue;
-				if (p.byteLength < CAMERA_PACKET_HEADER_SIZE) continue;
+				if (p.status !== "ok" || p.byteLength < PKT_HEADER_SIZE) continue;
 				const parsed = this.parsePacket(
 					new DataView(data, p.byteOffset, p.byteLength),
 				);
 				if (parsed) c.enqueue(parsed);
 			}
 		} else if ("data" in chunk && "packets" in chunk) {
-			// raw usb transfer result
+			// a live usb transfer result
 			for (const p of chunk.packets) {
-				if (p.status !== "ok") continue;
-				if (!p.data || p.data.byteLength < CAMERA_PACKET_HEADER_SIZE) continue;
+				if (!p.data || p.status !== "ok" || p.data.byteLength < PKT_HEADER_SIZE)
+					continue;
 				const parsed = this.parsePacket(p.data);
 				if (parsed) c.enqueue(parsed);
 			}
 		} else throw new TypeError("unknown chunk");
 	}
 
-	parseHeader = (pkt: DataView): CamPacketHeader | false =>
-		CAMERA_PACKET_MAGIC === pkt.getUint16(0) && {
+	parseHeader = (pkt: DataView): CamIsoPacketHeader | false =>
+		CamMagic.ISOCHRONOUS_IN === pkt.getUint16(0) && {
 			// 2
 			pType: pkt.getUint8(3),
 			// 4
@@ -99,8 +75,8 @@ export default class CameraPacketTransformer
 
 	parseType = (pType: number) =>
 		// high bits identify stream
-		this.packetType === (pType & 0xf0) && {
-			stream: this.packetType,
+		this.packetFlag === (pType & 0xf0) && {
+			stream: this.packetFlag,
 			// low bits indicate frame boundaries
 			startFrame: (pType & 0x0f) === CamIsoPacketFlag.START,
 			//midFrame: (pType & 0x0f) === CamIsoPacketFlag.MID,
@@ -122,9 +98,7 @@ export default class CameraPacketTransformer
 		let seqDelta = pSeq - this.seq;
 		if (seqDelta < 0) seqDelta += 256;
 		const loss =
-			seqDelta > 1
-				? (seqDelta - 1) * (this.packetSize - CAMERA_PACKET_HEADER_SIZE)
-				: 0;
+			seqDelta > 1 ? (seqDelta - 1) * (this.packetSize - PKT_HEADER_SIZE) : 0;
 
 		this.seq = pSeq;
 
@@ -133,7 +107,7 @@ export default class CameraPacketTransformer
 			loss,
 			header: header,
 			body: pktView.buffer.slice(
-				pktView.byteOffset + CAMERA_PACKET_HEADER_SIZE,
+				pktView.byteOffset + PKT_HEADER_SIZE,
 				pktView.byteOffset + pSize,
 			),
 		};
