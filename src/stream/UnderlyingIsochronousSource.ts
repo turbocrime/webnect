@@ -1,3 +1,5 @@
+import { CamIsoEndpoint } from "../CamEnums";
+
 const DEFAULT_BATCH_SIZE = 256;
 const DEFAULT_PULL_RATE_LIMIT = 5;
 const DEFAULT_MAX_PENDING_TRANSFERS = 2;
@@ -42,6 +44,9 @@ export class UnderlyingIsochronousSource
 	maxPendingTransfers: number;
 	pullRateLimit: number;
 
+	paused: Promise<void> | false = false;
+	unpause = () => {};
+
 	constructor(
 		device: USBDevice,
 		endpointNumber: number,
@@ -69,7 +74,8 @@ export class UnderlyingIsochronousSource
 		Array(this.maxPendingTransfers).forEach(() => this.pull(cont));
 	}
 
-	pull = (cont: ReadableStreamDefaultController) => {
+	pull(cont: ReadableStreamDefaultController) {
+		if (this.paused) return this.paused;
 		if (this.pendingTransfers < this.maxPendingTransfers) {
 			this.pendingTransfers++;
 			this.device
@@ -83,5 +89,21 @@ export class UnderlyingIsochronousSource
 		}
 		// TODO: rate limit necessary?
 		return new Promise<void>((r) => setTimeout(r, this.pullRateLimit));
-	};
+	}
+
+	cancel() {
+		this.device.close();
+	}
+
+	toggle(s: "stop" | "go") {
+		console.log("TOGGLE", s, CamIsoEndpoint[this.endpointNumber]);
+		if (s === "stop")
+			this.paused = new Promise((resolve) => {
+				this.unpause = resolve;
+			});
+		else {
+			this.paused = false;
+			this.unpause();
+		}
+	}
 }

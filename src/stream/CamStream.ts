@@ -1,45 +1,67 @@
 import type { CamMode } from "../util/CamMode";
-import { selectFrameSize } from "../util/CamMode";
+import { selectFrameSize, STREAM_OFF } from "../util/CamMode";
 import { CamFrameAssembler } from "./CamFrameAssembler";
 import { CamIsoPacket } from "./CamIsoParser";
 
-import { CamCanvas } from "../util/CamCanvas";
+//import { CamCanvas } from "../util/CamCanvas";
+import { selectFnToRgba } from "../index";
+import { RESOLUTIONS } from "../index";
 
-export class CamStream implements ReadableStream<ArrayBuffer> {
-	private frameAssembler: CamFrameAssembler;
+export class CamStream
+	implements TransformStream<CamIsoPacket, ArrayBuffer | ImageData>
+{
 	private _mode: CamMode;
+	private _readable: ReadableStream;
 
-	private frameStream: ReadableStream<ArrayBuffer>;
+	private packetStream?: ReadableStream<CamIsoPacket>;
+
+	frameAssembler: CamFrameAssembler;
 	private packetSink: WritableStream<CamIsoPacket>;
+	private rawStream: ReadableStream<ArrayBuffer>;
 
-	constructor(mode: CamMode, packetStream?: ReadableStream<CamIsoPacket>) {
-		this._mode = mode;
-		this.frameAssembler = new CamFrameAssembler(selectFrameSize(mode));
-		const { readable, writable } = new TransformStream(this.frameAssembler);
+	rawDeveloper?: CamFrameDeveloper;
+	private frameSink?: WritableStream<ArrayBuffer>;
+	private imageStream?: ReadableStream<ImageData>;
 
-		this.frameStream = readable;
-		this.packetSink = writable;
-		packetStream?.pipeTo(this.packetSink);
+	constructor(
+		//mode: CamMode,
+		deraw?: CamFrameDeveloper | boolean,
+		packets?: ReadableStream<CamIsoPacket>,
+	) {
+		this._mode = STREAM_OFF as CamMode;
+		this.packetStream = packets;
 
-		this.getReader = this.frameStream.getReader.bind(this.frameStream);
-		this.cancel = this.frameStream.cancel.bind(this.frameStream);
-		this.pipeTo = this.frameStream.pipeTo.bind(this.frameStream);
-		this.pipeThrough = this.frameStream.pipeThrough.bind(this.frameStream);
-		this.tee = this.frameStream.tee.bind(this.frameStream);
-	}
+		this.frameAssembler = new CamFrameAssembler(selectFrameSize(this._mode));
 
-	getReader: typeof this.frameStream.getReader;
-	pipeTo: typeof this.frameStream.pipeTo;
-	pipeThrough: typeof this.frameStream.pipeThrough;
-	tee: typeof this.frameStream.tee;
-	cancel: typeof this.frameStream.cancel;
+		if (deraw == null || deraw === true)
+			this.rawDeveloper = new CamFrameDeveloper(this._mode);
+		else if (deraw) this.rawDeveloper = deraw;
 
-	get locked(): typeof this.frameStream.locked {
-		return this.frameStream.locked;
+		const { readable: rawStream, writable: packetSink } = new TransformStream(
+			this.frameAssembler,
+		);
+		this.rawStream = rawStream;
+		this.packetSink = packetSink;
+		if (packets) packets.pipeTo(this.packetSink);
+		this._readable = this.rawStream;
+
+		if (this.rawDeveloper) {
+			const { readable: imageStream, writable: frameSink } =
+				new TransformStream(this.rawDeveloper);
+			this.imageStream = imageStream;
+			this.frameSink = frameSink;
+			this.rawStream.pipeTo(this.frameSink);
+			this._readable = this.imageStream;
+		}
 	}
 
 	get readable() {
-		return this.frameStream;
+		const currentReadable =
+			this._readable ?? this.imageStream ?? this.rawStream;
+		const [keep, send] = currentReadable.tee();
+		console.log("teeing readable on camstream", keep, send);
+		this._readable = keep;
+		return send;
 	}
 
 	get writable() {
@@ -53,9 +75,48 @@ export class CamStream implements ReadableStream<ArrayBuffer> {
 	set mode(mode: CamMode) {
 		this._mode = mode;
 		this.frameAssembler.frameSize = selectFrameSize(mode);
+		if (this.rawDeveloper) this.rawDeveloper.mode = mode;
 	}
 
-	getCanvas() {
-		return CamCanvas.create(this._mode, this.frameStream);
+	//getCanvas() { return CamCanvas.create(this._mode, this.readable); }
+}
+
+type ToRgba = (b: ArrayBuffer) => Uint8ClampedArray;
+export class CamFrameDeveloper implements Transformer<ArrayBuffer, ImageData> {
+	private _mode: CamMode;
+	private _customFn?: ToRgba;
+	private rawToRgba: ToRgba;
+
+	frameWidth: number;
+
+	constructor(mode: CamMode, customFn?: (r: ArrayBuffer) => Uint8ClampedArray) {
+		this._mode = mode;
+		this._customFn = customFn;
+		this.rawToRgba = customFn ?? selectFnToRgba(mode)!;
+		this.frameWidth = (RESOLUTIONS[mode.res] ?? [640, 480])[0];
+	}
+
+	get mode() {
+		return this._mode;
+	}
+
+	set mode(newMode: CamMode) {
+		this._mode = newMode;
+		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
+		console.log("selected fn", this.rawToRgba);
+		this.frameWidth = (RESOLUTIONS[newMode.res] ?? [640, 480])[0];
+	}
+
+	set customFn(newCustomFn: ToRgba) {
+		this._customFn = newCustomFn;
+		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
+	}
+
+	get customFn(): ToRgba | undefined {
+		return this._customFn;
+	}
+
+	transform(raw: ArrayBuffer, c: TransformStreamDefaultController<ImageData>) {
+		c.enqueue(new ImageData(this.rawToRgba(raw), this.frameWidth));
 	}
 }

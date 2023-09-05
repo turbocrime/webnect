@@ -11,9 +11,7 @@ import {
 	unpackGray,
 	unpackGrayToRgba,
 	bayerToRgba,
-	DEFAULT_MODE_VISIBLE,
-	DEFAULT_MODE_DEPTH,
-	DEFAULT_MODE_INFRARED,
+	DEFAULTS,
 	CamIsoEndpoint,
 } from "@webnect/webnect";
 
@@ -99,6 +97,7 @@ function setupKinect(requestUsbBtn: HTMLButtonElement) {
 					break;
 			}
 		});
+		console.log("existing setup");
 		if (devicesArg.camera) setupCameraDemo(devicesArg.camera as USBDevice);
 		if (devicesArg.motor) setupMotorDemo(devicesArg.motor as USBDevice);
 	}
@@ -111,6 +110,7 @@ function setupKinect(requestUsbBtn: HTMLButtonElement) {
 		};
 		if (!(motor || camera || audio))
 			return alert("Select at least one device.");
+		console.log("button setup");
 		if (motor) claimNuiMotor().then(setupMotorDemo);
 		if (camera) claimNuiCamera().then(setupCameraDemo);
 	});
@@ -127,9 +127,6 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 	cameraDemo.disabled = false;
 	cameraDemo.classList.remove("disabled");
 
-	const videoActiveCb =
-		document.querySelector<HTMLInputElement>("#videoActive")!;
-
 	const videoCanvas =
 		document.querySelector<HTMLCanvasElement>("#videoCanvas")!;
 	const videoCanvas2dCtx = videoCanvas.getContext("2d")!;
@@ -145,11 +142,9 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 	const videoModeOption =
 		document.querySelector<HTMLOptionElement>("#videoMode")!;
 	videoModeOption.addEventListener("change", async () => {
-		if (videoActiveCb.checked) {
-			await endStream();
-			await new Promise((r) => setTimeout(r, 200));
-			await runStream();
-		}
+		await endStream();
+		await new Promise((r) => setTimeout(r, 200));
+		await runStream();
 	});
 
 	const videoFsBtn = document.querySelector<HTMLButtonElement>("#videoFsBtn")!;
@@ -174,21 +169,26 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 		}
 	});
 
-	let breakStreamLoop: boolean;
-
+	let breakLoop;
 	const runStream = async () => {
-		breakStreamLoop = false;
+		const frameCounter = Array();
+		const videoFps = document.getElementById("videoFps")!;
+		setInterval(() => {
+			videoFps.innerText = `${frameCounter.length}`;
+			frameCounter.splice(0, frameCounter.length);
+		}, 1000);
+		breakLoop = false;
 		try {
-			videoActiveCb.checked = true;
-
+			await camera.ready;
+			let camStream: ReadableStream<ImageData>;
 			switch (videoModeOption.value) {
 				case "depth": {
-					await camera.ready;
-					await camera.setMode(DEFAULT_MODE_DEPTH);
-					const depthStream = camera.depth;
-					const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
-					for await (const frame of readAsGenerator(depthStream)) {
-						if (breakStreamLoop) break;
+					await camera.setMode({
+						[CamIsoEndpoint.DEPTH]: DEFAULTS.DEPTH,
+						[CamIsoEndpoint.VIDEO]: DEFAULTS.OFF,
+					});
+					const customDepthRgba = (frame: ArrayBuffer) => {
+						const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
 						// frame is 11bit/u16gray, expand for canvas rgba
 						const grayFrame = unpackGray(11, frame);
 
@@ -207,51 +207,38 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 							rgbaFrame[i * 4 + 2] = ((grayPixel << 3) + colorMarch) & 0xff;
 							rgbaFrame[i * 4 + 3] = grayPixel < 2047 ? 0xff : 0x00;
 						}
-						const drawFrame = new ImageData(rgbaFrame, 640, 480);
-						if (document.fullscreenElement)
-							videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
-						else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
-					}
+						return rgbaFrame;
+					};
+					if (camera.depth.rawDeveloper)
+						camera.depth.rawDeveloper.customFn = customDepthRgba;
+					camStream = camera.depth.readable as ReadableStream<ImageData>;
 					break;
 				}
-
 				case "visible": {
-					await camera.ready;
 					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: { stream: 0 },
-						[CamIsoEndpoint.VIDEO]: DEFAULT_MODE_VISIBLE,
+						[CamIsoEndpoint.DEPTH]: DEFAULTS.OFF,
+						[CamIsoEndpoint.VIDEO]: DEFAULTS.VISIBLE,
 					});
-					const videoStream = camera.video;
-					for await (const bayerBuf of readAsGenerator(videoStream)) {
-						if (breakStreamLoop) break;
-						const bayer = new Uint8Array(bayerBuf);
-						const drawFrame = new ImageData(bayerToRgba(640, 480, bayer), 640);
-						if (document.fullscreenElement)
-							videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
-						else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
-					}
+					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
 				}
-
 				case "ir": {
-					await camera.ready;
 					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: { stream: 0 },
-						[CamIsoEndpoint.VIDEO]: DEFAULT_MODE_INFRARED,
+						[CamIsoEndpoint.DEPTH]: DEFAULTS.OFF,
+						[CamIsoEndpoint.VIDEO]: DEFAULTS.INFRARED,
 					});
-					const videoStream = camera.video;
-					for await (const irBuf of readAsGenerator(videoStream)) {
-						if (breakStreamLoop) break;
-						const drawFrame = new ImageData(unpackGrayToRgba(10, irBuf), 640);
-						if (document.fullscreenElement)
-							videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
-						else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
-					}
+					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
 				}
-				default: {
-					// uhh idk
-				}
+				default:
+					camStream = camera.video.readable as ReadableStream<ImageData>;
+			}
+			for await (const drawFrame of readAsGenerator(camStream)) {
+				if (breakLoop) break;
+				if (document.fullscreenElement)
+					videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
+				else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
+				frameCounter.push(true);
 			}
 		} catch (e) {
 			cameraDemo.disabled = true;
@@ -261,15 +248,13 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 	};
 
 	const endStream = async () => {
-		videoActiveCb.checked = false;
-		breakStreamLoop = true;
-		await camera.setMode({ stream: 0 });
+		breakLoop = true;
+		await camera.setMode({
+			[CamIsoEndpoint.DEPTH]: DEFAULTS.OFF,
+			[CamIsoEndpoint.VIDEO]: DEFAULTS.OFF,
+		});
 		videoCanvas2dCtx.clearRect(0, 0, 640, 480);
 	};
-
-	videoActiveCb.addEventListener("change", () =>
-		videoActiveCb.checked ? runStream() : endStream(),
-	);
 
 	runStream();
 }

@@ -20,6 +20,8 @@ export type CamMode = {
 	flip: ON | OFF;
 };
 
+export type CamModeSet = Record<CamIsoEndpoint, CamMode>;
+
 // TODO: throw invalid modes
 export const selectFrameSize = ({
 	stream,
@@ -70,15 +72,16 @@ export const selectPacketFlag = (mode: CamMode) =>
 		? CamIsoPacketFlag.DEPTH
 		: CamIsoPacketFlag.VIDEO;
 
-export const DEFAULT_MODE_VISIBLE = {
+const DEFAULT_MODE_VISIBLE = {
 	stream: CamType.VISIBLE,
 	format: CamFmtVisible.BAYER_8B,
+	//format: CamFmtVisible.YUV_16B,
 	res: CamRes.MED,
 	flip: OFF,
 	fps: CamFps.F_30P,
 };
 
-export const DEFAULT_MODE_INFRARED = {
+const DEFAULT_MODE_INFRARED = {
 	stream: CamType.INFRARED,
 	format: CamFmtInfrared.IR_10B,
 	res: CamRes.MED,
@@ -86,7 +89,7 @@ export const DEFAULT_MODE_INFRARED = {
 	fps: CamFps.F_30P,
 };
 
-export const DEFAULT_MODE_DEPTH = {
+const DEFAULT_MODE_DEPTH = {
 	stream: CamType.DEPTH,
 	format: CamFmtDepth.D_11B,
 	res: CamRes.MED,
@@ -94,39 +97,36 @@ export const DEFAULT_MODE_DEPTH = {
 	fps: CamFps.F_30P,
 };
 
-export const ALL_OFF = {
-	[CamIsoEndpoint.VIDEO]: { stream: OFF },
-	[CamIsoEndpoint.DEPTH]: { stream: OFF },
-} as Record<CamType, CamMode>;
+export const STREAM_OFF = { stream: OFF } as CamMode;
 
-type SingleMode = Partial<CamMode> & { stream: CamType | OFF };
-type SomeModes = Partial<Record<CamIsoEndpoint, SingleMode>>;
-export type CamModeOpt = SingleMode | SomeModes;
+export const modes = (depthMode = STREAM_OFF, videoMode = STREAM_OFF) =>
+	({
+		[CamIsoEndpoint.DEPTH]: depthMode,
+		[CamIsoEndpoint.VIDEO]: videoMode,
+	}) as CamModeSet;
 
-export const DEFAULT_MODES = {
+export const DEFAULTS = {
 	[CamType.VISIBLE]: DEFAULT_MODE_VISIBLE,
+	VISIBLE: DEFAULT_MODE_VISIBLE,
 	[CamType.INFRARED]: DEFAULT_MODE_INFRARED,
+	INFRARED: DEFAULT_MODE_INFRARED,
 	[CamType.DEPTH]: DEFAULT_MODE_DEPTH,
-} as Record<CamType, CamMode>;
+	DEPTH: DEFAULT_MODE_DEPTH,
+	[OFF]: STREAM_OFF,
+	OFF: STREAM_OFF,
+};
 
 export const parseModeOpts = (
-	existing: Record<CamIsoEndpoint, CamMode>,
-	useDefaults = false as typeof DEFAULT_MODES | boolean,
-	modeOpt = {} as CamModeOpt,
+	existing: CamModeSet,
+	useDefaults = false as typeof DEFAULTS | boolean,
+	modeOpt = {} as Record<CamIsoEndpoint, Partial<CamMode>>,
 ): Record<CamIsoEndpoint, CamMode> => {
-	const defaults = useDefaults === true ? DEFAULT_MODES : useDefaults;
-
-	const isSingleMode = (
-		modeOpt: SingleMode | SomeModes,
-	): modeOpt is SingleMode => "stream" in modeOpt;
-
-	const isSomeModes = (modeOpt: SingleMode | SomeModes): modeOpt is SomeModes =>
-		CamIsoEndpoint.DEPTH in modeOpt || CamIsoEndpoint.VIDEO in modeOpt;
+	const defaults = useDefaults === true ? DEFAULTS : useDefaults;
 
 	const getUpdatedMode = (
 		endpoint: CamIsoEndpoint,
-		mode?: SingleMode,
-	): Partial<Record<CamIsoEndpoint, CamMode>> => ({
+		mode?: Partial<CamMode>,
+	): Partial<CamModeSet> => ({
 		[endpoint]: {
 			...(defaults && mode?.stream
 				? defaults[mode.stream]
@@ -135,34 +135,11 @@ export const parseModeOpts = (
 		},
 	});
 
-	if (isSingleMode(modeOpt)) {
-		if (modeOpt.stream === OFF)
-			parseModeOpts(existing, defaults, {
-				[CamIsoEndpoint.VIDEO]: { stream: OFF },
-				[CamIsoEndpoint.DEPTH]: { stream: OFF },
-			});
-		else if (modeOpt.stream === CamType.DEPTH)
-			parseModeOpts(existing, defaults, {
-				[CamIsoEndpoint.VIDEO]: existing[CamIsoEndpoint.VIDEO],
-				...getUpdatedMode(CamIsoEndpoint.DEPTH, modeOpt),
-			});
-		else if (
-			modeOpt.stream === CamType.VISIBLE ||
-			modeOpt.stream === CamType.INFRARED
-		)
-			parseModeOpts(existing, defaults, {
-				[CamIsoEndpoint.DEPTH]: existing[CamIsoEndpoint.VIDEO],
-				...getUpdatedMode(CamIsoEndpoint.VIDEO, modeOpt),
-			});
-	} else if (isSomeModes(modeOpt))
-		return {
-			...getUpdatedMode(CamIsoEndpoint.VIDEO, modeOpt[CamIsoEndpoint.VIDEO]),
-			...getUpdatedMode(CamIsoEndpoint.DEPTH, modeOpt[CamIsoEndpoint.DEPTH]),
-		} as Record<CamIsoEndpoint, CamMode>;
-
-	// fallback
-	return {
-		[CamIsoEndpoint.VIDEO]: DEFAULT_MODE_INFRARED,
-		[CamIsoEndpoint.DEPTH]: DEFAULT_MODE_DEPTH,
+	console.log("resolving mode options", modeOpt);
+	const fullMode = {
+		...getUpdatedMode(CamIsoEndpoint.VIDEO, modeOpt[CamIsoEndpoint.VIDEO]),
+		...getUpdatedMode(CamIsoEndpoint.DEPTH, modeOpt[CamIsoEndpoint.DEPTH]),
 	} as Record<CamIsoEndpoint, CamMode>;
+	console.log("resolved to", fullMode);
+	return fullMode;
 };

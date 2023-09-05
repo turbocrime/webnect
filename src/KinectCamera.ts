@@ -1,5 +1,8 @@
-import { CamStream } from "./stream/CamStream";
-import type { CamIsoWorkerInitReply } from "./worker/CamIsoWorker";
+import { CamStream, CamFrameDeveloper } from "./stream/CamStream";
+import type {
+	CamIsoWorkerInitReply,
+	CamIsoWorkerToggleMsg,
+} from "./worker/CamIsoWorker";
 
 import {
 	CamMagic,
@@ -8,10 +11,17 @@ import {
 	CamUsbCommand,
 	CamUsbControl,
 	CamIsoEndpoint,
+	ON,
 	OFF,
 } from "./CamEnums";
 
-import { CamModeOpt, parseModeOpts, ALL_OFF } from "./util/CamMode";
+import {
+	CamModeSet,
+	parseModeOpts,
+	modes,
+	DEFAULTS,
+	STREAM_OFF,
+} from "./util/CamMode";
 
 export * from "./CamEnums";
 export * from "./util/CamMode";
@@ -26,19 +36,24 @@ export class KinectCamera {
 	[CamIsoEndpoint.VIDEO]: CamStream;
 
 	cmdTag: number;
+	cmdQueue: Array<Promise<number[]>>;
 
 	usbWorker: Worker;
 
 	ready: Promise<this>;
 
-	constructor(dev: USBDevice, cameraMode?: CamModeOpt) {
+	constructor(
+		dev: USBDevice,
+		cameraMode?: CamModeSet,
+		deraw = true as CamFrameDeveloper | boolean,
+	) {
 		this.cmdTag = 1;
+		this.cmdQueue = new Array();
 
 		this.dev = dev;
 
-		const modes = parseModeOpts(ALL_OFF, true, cameraMode);
-		this[CamIsoEndpoint.VIDEO] = new CamStream(modes[CamIsoEndpoint.VIDEO]);
-		this[CamIsoEndpoint.DEPTH] = new CamStream(modes[CamIsoEndpoint.DEPTH]);
+		this[CamIsoEndpoint.VIDEO] = new CamStream(deraw);
+		this[CamIsoEndpoint.DEPTH] = new CamStream(deraw);
 
 		this.usbWorker = new Worker(
 			new URL("./worker/CamIsoWorker.ts", import.meta.url),
@@ -47,10 +62,12 @@ export class KinectCamera {
 				type: "module",
 			},
 		);
+		/*
+		this.writeRegister(CamOption.VISIBLE_FLIP, ON);
+		this.writeRegister(CamOption.INFRARED_FLIP, OFF);
+		this.writeRegister(CamOption.DEPTH_FLIP, OFF);
+		*/
 		this.ready = this.initWorker();
-		//this.writeRegister(CamOption.VISIBLE_FLIP, OFF);
-		//this.writeRegister(CamOption.INFRARED_FLIP, OFF);
-		//this.writeRegister(CamOption.DEPTH_FLIP, OFF);
 	}
 
 	get depth() {
@@ -85,13 +102,14 @@ export class KinectCamera {
 			},
 		});
 
-		const { videoIso, depthIso } = await workerReply;
-		videoIso.pipeTo(this[CamIsoEndpoint.VIDEO].writable);
-		depthIso.pipeTo(this[CamIsoEndpoint.DEPTH].writable);
+		const { video, depth } = await workerReply;
+		video.pipeTo(this[CamIsoEndpoint.VIDEO].writable);
+		depth.pipeTo(this[CamIsoEndpoint.DEPTH].writable);
 		return this;
 	}
 
-	async setMode(modeOpt?: CamModeOpt) {
+	async setMode(modeOpt?: CamModeSet) {
+		console.log("setting modes", modeOpt);
 		const modes = parseModeOpts(
 			{
 				[CamIsoEndpoint.VIDEO]: this[CamIsoEndpoint.VIDEO].mode,
@@ -100,16 +118,38 @@ export class KinectCamera {
 			false,
 			modeOpt,
 		);
+
 		this[CamIsoEndpoint.VIDEO].mode = modes[CamIsoEndpoint.VIDEO];
 		this[CamIsoEndpoint.DEPTH].mode = modes[CamIsoEndpoint.DEPTH];
-		this.writeModeRegisters();
+
+		this.usbWorker.postMessage({
+			type: "toggle",
+			video: "stop",
+			depth: "stop",
+		} as CamIsoWorkerToggleMsg);
+
+		// sleep briefly
+		await new Promise((r) => setTimeout(r, 50));
+
+		await this.writeModeRegisters();
+
+		await new Promise((r) => setTimeout(r, 50));
+
+		const toggleMessage = {
+			type: "toggle",
+			video: modes[CamIsoEndpoint.VIDEO].stream ? "go" : "stop",
+			depth: modes[CamIsoEndpoint.DEPTH].stream ? "go" : "stop",
+		} as CamIsoWorkerToggleMsg;
+		console.log("resuming streams", toggleMessage);
+		this.usbWorker.postMessage(toggleMessage);
 	}
 
 	async writeModeRegisters() {
+		console.log("SETTING MODE");
 		await this.writeRegister(CamOption.PROJECTOR_CYCLE, OFF);
 		{
-			const { format, res, fps, flip, stream } =
-				this[CamIsoEndpoint.DEPTH].mode;
+			console.log("SETTING DEPTH MODE", this[CamIsoEndpoint.DEPTH].mode);
+			const { format, res, fps, stream } = this[CamIsoEndpoint.DEPTH].mode;
 
 			await this.writeRegister(CamOption.DEPTH_TYPE, OFF);
 
@@ -121,6 +161,7 @@ export class KinectCamera {
 		}
 
 		{
+			console.log("SETTING VIDEO MODE", this[CamIsoEndpoint.VIDEO].mode);
 			const { format, res, fps, flip, stream } =
 				this[CamIsoEndpoint.VIDEO].mode;
 
@@ -150,19 +191,21 @@ export class KinectCamera {
 			new ArrayBuffer(CMD_HEADER_SIZE + content.byteLength),
 		);
 		cmd.set([CamMagic.COMMAND_OUT, content.length, cmdId, this.cmdTag]);
+		this.cmdTag++;
 		cmd.set(content, CMD_HEADER_SIZE / cmd.BYTES_PER_ELEMENT);
 
 		const rCmd = new Uint16Array(await this.controlOutIn(cmd.buffer));
 		const [rMagic, rLength, rCmdId, rTag, ...rContent] = rCmd;
 
+		/*
 		if (rMagic !== CamMagic.COMMAND_IN) throw Error(`bad magic ${rMagic}`);
 		if (rLength !== rContent.length)
 			throw Error(`bad len ${rLength} ${rContent.length}`);
 		if (rCmdId !== cmdId) throw Error(`bad cmd ${rCmdId} ${cmdId}`);
 		if (rTag !== this.cmdTag) throw Error(`bad tag ${rTag} ${this.cmdTag}`);
-		console.log("rCmd", rCmd);
+		*/
+		console.log("rCmd", ...rCmd);
 
-		this.cmdTag++;
 		return rContent;
 	}
 
@@ -171,8 +214,29 @@ export class KinectCamera {
 		const retry = 10;
 		let usbResult: USBInTransferResult | USBOutTransferResult;
 
-		try {
-			usbResult = await this.dev.controlTransferOut(
+		console.log("sending", [...new Uint16Array(controlBuffer)]);
+		usbResult = await this.dev.controlTransferOut(
+			{
+				requestType: "vendor",
+				recipient: "device",
+				request: CamUsbControl.CAMERA,
+				value: 0,
+				index: 0,
+			},
+			controlBuffer,
+		);
+		if (usbResult.status !== "ok") throw Error(`Camera control ${usbResult}`);
+
+		const responseTimeout = setTimeout(() => {
+			throw Error("Camera control timeout");
+		}, timeout);
+
+		let retryDelay = Promise.resolve();
+
+		do {
+			await retryDelay;
+			retryDelay = new Promise((resolve) => setTimeout(resolve, retry));
+			usbResult = await this.dev.controlTransferIn(
 				{
 					requestType: "vendor",
 					recipient: "device",
@@ -180,63 +244,36 @@ export class KinectCamera {
 					value: 0,
 					index: 0,
 				},
-				controlBuffer,
+				10,
 			);
-			if (usbResult.status !== "ok") throw Error(`Camera control ${usbResult}`);
+		} while (!usbResult.data?.byteLength);
+		clearTimeout(responseTimeout);
 
-			const responseTimeout = setTimeout(() => {
-				throw Error(`Camera control timeout`);
-			}, timeout);
-
-			let retryDelay = Promise.resolve();
-
-			do {
-				await retryDelay;
-				retryDelay = new Promise((resolve) => setTimeout(resolve, retry));
-				usbResult = await this.dev.controlTransferIn(
-					{
-						requestType: "vendor",
-						recipient: "device",
-						request: CamUsbControl.CAMERA,
-						value: 0,
-						index: 0,
-					},
-					10,
-				);
-			} while (!usbResult.data?.byteLength);
-			clearTimeout(responseTimeout);
-
-			return usbResult.data?.buffer;
-		} catch (e) {
-			// retry
-			console.error(e);
-			return this.controlOutIn(controlBuffer);
-		}
+		console.log("returning", [...new Uint16Array(usbResult.data.buffer)]);
+		return usbResult.data?.buffer;
 	}
 
 	// TODO: sequence write attempts?
-	async writeRegister(register: CamOption, value: number) {
+	async writeRegister(register: CamOption, value: number): Promise<[0]> {
+		console.log("WRITING", CamOption[register], value);
 		try {
-			console.log("WRITING", CamOption[register], value);
 			const write = await this.command(
 				CamUsbCommand.WRITE_REGISTER,
 				new Uint16Array([register, value]),
 			);
-			if (write.length === 1 && write[0] === 0) return write;
+			if (write.length === 1 && write[0] === 0) return write as [0];
 			else throw Error(`bad write ${write}`);
 		} catch (e) {
-			// retry
-			console.error(e);
-			return this.writeRegister(register, value);
+			console.error("why is this happening", e);
 		}
 	}
 
-	async readRegister(register: number) {
+	async readRegister(register: number): Promise<[number, number]> {
 		const read = await this.command(
 			CamUsbCommand.READ_REGISTER,
 			new Uint16Array([register]),
 		);
-		if (read.length === 2) return read;
+		if (read.length === 2) return read as [number, number];
 		else throw Error(`bad read ${read}`);
 	}
 }

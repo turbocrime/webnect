@@ -83,6 +83,79 @@ export const unpackGrayToRgba = (
 	return rgba;
 };
 
+// like in libfreenect
+const t_gamma = new Uint16Array(2048).map((_, i) => {
+	const v = i / 2048.0;
+	return Math.round(v ** 3 * 6 * 6 * 256);
+});
+
+export const grayToGamma = (bitsPerPixel: number, grayBuffer: ArrayBuffer) => {
+	const gray = new Uint16Array(grayBuffer);
+	const rgba = new Uint8ClampedArray(gray.length * 4);
+	const maxPixel = (1 << bitsPerPixel) - 1;
+	const adjustDepth = 11 - bitsPerPixel;
+
+	for (let grayI = 0; grayI < gray.length; grayI++) {
+		const pixel = gray[grayI];
+		if (pixel === maxPixel) continue;
+
+		const red = grayI << 2;
+		const green = red + 1;
+		const blue = red + 2;
+		const alpha = red + 3;
+
+		const gamma = t_gamma[pixel << adjustDepth];
+		const high = gamma >> 8;
+		const low = gamma & 0xff;
+
+		switch (high) {
+			case 0:
+				rgba[red] = 0xff;
+				rgba[green] = 0xff - low;
+				rgba[blue] = 0xff - low;
+				rgba[alpha] = 0xff;
+				break;
+			case 1:
+				rgba[red] = 0xff;
+				rgba[green] = low;
+				rgba[blue] = 0x00;
+				rgba[alpha] = 0xff;
+				break;
+			case 2:
+				rgba[red] = 0xff - low;
+				rgba[green] = 0xff;
+				rgba[blue] = 0x00;
+				rgba[alpha] = 0xff;
+				break;
+			case 3:
+				rgba[red] = 0x00;
+				rgba[green] = 0xff;
+				rgba[blue] = low;
+				rgba[alpha] = 0xff;
+				break;
+			case 4:
+				rgba[red] = 0x00;
+				rgba[green] = 0xff - low;
+				rgba[blue] = 0xff;
+				rgba[alpha] = 0xff;
+				break;
+			case 5:
+				rgba[red] = 0x00;
+				rgba[green] = 0x00;
+				rgba[blue] = 0xff - low;
+				rgba[alpha] = 0xff;
+				break;
+			default:
+				rgba[red] = 0xff;
+				rgba[green] = 0xff;
+				rgba[blue] = 0xff;
+				rgba[alpha] = 0xff;
+				break;
+		}
+	}
+	return rgba;
+};
+
 export const bayerToRgba = (
 	width: number,
 	height: number,
@@ -91,70 +164,71 @@ export const bayerToRgba = (
 	const bayer = new Uint8Array(bayerBuffer);
 	const rgba = new Uint8ClampedArray(width * height * 4);
 
-	const bayerIndex = (x: number, y: number) =>
-		Math.min(Math.max(y * width + x, 0), width * height - 1);
+	let isEvenRow = true;
+	for (
+		let bayerI = 0, rgbaI = 0, col = 0;
+		bayerI < bayer.length;
+		// rome-ignore lint/style/noCommaOperator: linter is broken
+		bayerI++, col++, rgbaI += 4
+	) {
+		const isEvenCol = !(col & 1);
+		if (col >= width) {
+			col = 0;
+			isEvenRow = !isEvenRow;
+		}
 
-	const colorKernel = (x: number, y: number, offsets: [number, number][]) =>
-		offsets.reduce(
-			(sum, [dx, dy]) => sum + bayer[bayerIndex(x + dx, y + dy)],
-			0,
-		) / offsets.length;
+		const red = rgbaI;
+		const green = rgbaI + 1;
+		const blue = rgbaI + 2;
+		const alpha = rgbaI + 3;
 
-	for (let y = 0; y < height; y++) {
-		for (let x = 0; x < width; x++) {
-			const i = bayerIndex(x, y) * 4;
-			const isEvenRow = y % 2 === 0;
-			const isEvenCol = x % 2 === 0;
-
-			if (isEvenRow === isEvenCol) {
-				// green kernel
-				const [r, b] = !isEvenRow ? [2, 0] : [0, 2];
-				rgba[i + r] = colorKernel(x, y, [
-					[-1, 0],
-					[1, 0],
-				]);
-				rgba[i + 1] = bayer[bayerIndex(x, y)];
-				rgba[i + b] = colorKernel(x, y, [
-					[0, -1],
-					[0, 1],
-				]);
-			} else if (isEvenRow) {
-				// red kernel
-				rgba[i + 0] = bayer[bayerIndex(x, y)];
-				rgba[i + 1] = colorKernel(x, y, [
-					[-1, 0],
-					[1, 0],
-					[0, -1],
-					[0, 1],
-				]);
-				rgba[i + 2] = colorKernel(x, y, [
-					[-1, -1],
-					[1, 1],
-					[1, -1],
-					[-1, 1],
-				]);
+		if (isEvenRow === isEvenCol) {
+			// green kernel
+			if (isEvenCol) {
+				rgba[red] = (bayer[bayerI - 1] + bayer[bayerI + 1]) >> 1;
+				rgba[green] = bayer[bayerI];
+				rgba[blue] = (bayer[bayerI - width] + bayer[bayerI + width]) >> 1;
+				rgba[alpha] = 0xff;
 			} else {
-				// blue kernel
-				rgba[i + 0] = colorKernel(x, y, [
-					[-1, -1],
-					[1, 1],
-					[1, -1],
-					[-1, 1],
-				]);
-				rgba[i + 1] = colorKernel(x, y, [
-					[-1, 0],
-					[1, 0],
-					[0, -1],
-					[0, 1],
-				]);
-				rgba[i + 2] = bayer[bayerIndex(x, y)];
+				rgba[red] = (bayer[bayerI - width] + bayer[bayerI + width]) >> 1;
+				rgba[green] = bayer[bayerI];
+				rgba[blue] = (bayer[bayerI - 1] + bayer[bayerI + 1]) >> 1;
+				rgba[alpha] = 0xff;
 			}
-
-			// alpha
-			rgba[i + 3] = 255;
+		} else if (isEvenRow) {
+			// red kernel
+			rgba[red] = bayer[bayerI];
+			rgba[green] =
+				(bayer[bayerI - 1] +
+					bayer[bayerI + 1] +
+					bayer[bayerI - width] +
+					bayer[bayerI + width]) >>
+				2;
+			rgba[blue] =
+				(bayer[bayerI - width - 1] +
+					bayer[bayerI - width + 1] +
+					bayer[bayerI + width - 1] +
+					bayer[bayerI + width + 1]) >>
+				2;
+			rgba[alpha] = 0xff;
+		} else {
+			// blue kernel
+			rgba[red] =
+				(bayer[bayerI - width - 1] +
+					bayer[bayerI - width + 1] +
+					bayer[bayerI + width - 1] +
+					bayer[bayerI + width + 1]) >>
+				2;
+			rgba[green] =
+				(bayer[bayerI - 1] +
+					bayer[bayerI + 1] +
+					bayer[bayerI - width] +
+					bayer[bayerI + width]) >>
+				2;
+			rgba[blue] = bayer[bayerI];
+			rgba[alpha] = 0xff;
 		}
 	}
-
 	return rgba;
 };
 
@@ -167,7 +241,7 @@ export const uyvyToRgba = (
 		y + 1.402 * (v - 128),
 		y - 0.344136 * (u - 128) - 0.714136 * (v - 128),
 		y + 1.772 * (u - 128),
-		255,
+		0xff,
 	];
 	const uyvy = new Uint8Array(uyvyBuffer);
 	const rgba = new Uint8ClampedArray(width * height * 4);
@@ -187,47 +261,47 @@ export const uyvyToRgba = (
 	return rgba;
 };
 
-export const selectFnToRgba = (mode: CamMode) => {
-	const [width, height] = RESOLUTIONS[mode.res as CamRes];
-	switch (mode.stream) {
-		case CamType.VISIBLE:
-			if (mode.format === CamFmtVisible.BAYER_8B)
-				return bayerToRgba.bind(null, width, height);
-			else if (mode.format === CamFmtVisible.YUV_16B)
-				return uyvyToRgba.bind(null, width, height);
-			break;
-		case CamType.DEPTH:
-			if (mode.format === CamFmtDepth.D_11B) return grayToRgba.bind(null, 11);
-			else if (mode.format === CamFmtDepth.D_10B)
-				return grayToRgba.bind(null, 10);
-			break;
-		case CamType.INFRARED:
-			if (mode.format === CamFmtInfrared.IR_10B)
-				return grayToRgba.bind(null, 10);
-			break;
-		default: // yolo it
-			return (frame: ArrayBuffer) => new Uint8ClampedArray(frame);
-	}
-};
-
 export const RESOLUTIONS = {
 	[CamRes.LOW]: [320, 240, 320 * 240],
 	[CamRes.MED]: [640, 480, 640 * 480],
 	[CamRes.HIGH]: [1280, 1024, 1280 * 1024],
 };
 
+export const selectFnToRgba = (
+	mode: CamMode,
+): ((f: ArrayBuffer) => Uint8ClampedArray) => {
+	const [width, height] = RESOLUTIONS[mode.res] ?? [640, 480];
+	switch (mode.stream) {
+		case CamType.VISIBLE:
+			if (mode.format === CamFmtVisible.BAYER_8B)
+				return (f) => bayerToRgba(width, height, f);
+			else if (mode.format === CamFmtVisible.YUV_16B)
+				return (f) => uyvyToRgba(width, height, f);
+			break;
+		case CamType.DEPTH:
+			if (mode.format === CamFmtDepth.D_11B)
+				return (f) => grayToGamma(11, unpackGray(11, f));
+			//return (f) => unpackGrayToRgba(11, f);
+			else if (mode.format === CamFmtDepth.D_10B)
+				return (f) => unpackGrayToRgba(10, f);
+			break;
+		case CamType.INFRARED:
+			if (mode.format === CamFmtInfrared.IR_10B)
+				return (f) => unpackGrayToRgba(10, f);
+			break;
+	}
+	return (f: ArrayBuffer) => {
+		console.error("untransformed buffer");
+		return new Uint8ClampedArray(f);
+	};
+};
 export const readAsGenerator = async function* (
 	streamOrReader: ReadableStream | ReadableStreamDefaultReader,
 ) {
-	// make sure it's teed
 	const isReadableStream = "getReader" in streamOrReader;
-	const isReader = "read" in streamOrReader;
 	let reader: ReadableStreamDefaultReader;
-	if (isReadableStream) {
-		const [tee1, tee2] = streamOrReader.tee();
-		reader = tee1.getReader();
-		//reader = streamOrReader.getReader();
-	} else if (isReader) reader = streamOrReader;
+	if (isReadableStream) reader = streamOrReader.getReader();
+	else reader = streamOrReader;
 	try {
 		while (true) {
 			const frame = await reader.read();
