@@ -32,11 +32,12 @@ const getDeviceIndex = (d: USBDevice) =>
 export class KinectCamera {
 	dev: USBDevice;
 
+	_registers: Record<CamOption, number>;
+
 	[CamIsoEndpoint.DEPTH]: CamStream;
 	[CamIsoEndpoint.VIDEO]: CamStream;
 
 	cmdTag: number;
-	cmdQueue: Array<Promise<number[]>>;
 
 	usbWorker: Worker;
 
@@ -51,6 +52,8 @@ export class KinectCamera {
 		this.cmdQueue = new Array();
 
 		this.dev = dev;
+		this._registers = {} as Record<CamOption, number>;
+		//this.initRegisters();
 
 		this[CamIsoEndpoint.VIDEO] = new CamStream(deraw);
 		this[CamIsoEndpoint.DEPTH] = new CamStream(deraw);
@@ -187,15 +190,22 @@ export class KinectCamera {
 
 	async command(cmdId: CamUsbCommand, content: Uint16Array) {
 		const CMD_HEADER_SIZE = 8; // bytes
-		const cmd = new Uint16Array(
-			new ArrayBuffer(CMD_HEADER_SIZE + content.byteLength),
-		);
-		cmd.set([CamMagic.COMMAND_OUT, content.length, cmdId, this.cmdTag]);
+		const cmdTag = this.cmdTag;
 		this.cmdTag++;
-		cmd.set(content, CMD_HEADER_SIZE / cmd.BYTES_PER_ELEMENT);
 
-		const rCmd = new Uint16Array(await this.controlOutIn(cmd.buffer));
-		const [rMagic, rLength, rCmdId, rTag, ...rContent] = rCmd;
+		const cmd = new ArrayBuffer(CMD_HEADER_SIZE + content.byteLength);
+		const cmd16 = new Uint16Array(cmd);
+		cmd16.set([CamMagic.COMMAND_OUT, content.length, cmdId, cmdTag]);
+		cmd16.set(content, CMD_HEADER_SIZE / cmd16.BYTES_PER_ELEMENT);
+
+		const rCmd = new Promise<ArrayBuffer>((resolve, reject) => {
+			this.cmdQueue.push({ cmdTag, cmd, resolve, reject });
+		});
+
+		this.processCmdQueue();
+
+		const rCmd16 = new Uint16Array(await rCmd);
+		const [rMagic, rLength, rCmdId, rTag, ...rContent] = rCmd16;
 
 		/*
 		if (rMagic !== CamMagic.COMMAND_IN) throw Error(`bad magic ${rMagic}`);
@@ -204,68 +214,21 @@ export class KinectCamera {
 		if (rCmdId !== cmdId) throw Error(`bad cmd ${rCmdId} ${cmdId}`);
 		if (rTag !== this.cmdTag) throw Error(`bad tag ${rTag} ${this.cmdTag}`);
 		*/
-		console.log("rCmd", ...rCmd);
 
 		return rContent;
 	}
 
-	async controlOutIn(controlBuffer: ArrayBuffer) {
-		const timeout = 150;
-		const retry = 10;
-		let usbResult: USBInTransferResult | USBOutTransferResult;
-
-		console.log("sending", [...new Uint16Array(controlBuffer)]);
-		usbResult = await this.dev.controlTransferOut(
-			{
-				requestType: "vendor",
-				recipient: "device",
-				request: CamUsbControl.CAMERA,
-				value: 0,
-				index: 0,
-			},
-			controlBuffer,
-		);
-		if (usbResult.status !== "ok") throw Error(`Camera control ${usbResult}`);
-
-		const responseTimeout = setTimeout(() => {
-			throw Error("Camera control timeout");
-		}, timeout);
-
-		let retryDelay = Promise.resolve();
-
-		do {
-			await retryDelay;
-			retryDelay = new Promise((resolve) => setTimeout(resolve, retry));
-			usbResult = await this.dev.controlTransferIn(
-				{
-					requestType: "vendor",
-					recipient: "device",
-					request: CamUsbControl.CAMERA,
-					value: 0,
-					index: 0,
-				},
-				10,
-			);
-		} while (!usbResult.data?.byteLength);
-		clearTimeout(responseTimeout);
-
-		console.log("returning", [...new Uint16Array(usbResult.data.buffer)]);
-		return usbResult.data?.buffer;
-	}
+	async controlOutIn(controlBuffer: ArrayBuffer) {}
 
 	// TODO: sequence write attempts?
 	async writeRegister(register: CamOption, value: number): Promise<[0]> {
 		console.log("WRITING", CamOption[register], value);
-		try {
-			const write = await this.command(
-				CamUsbCommand.WRITE_REGISTER,
-				new Uint16Array([register, value]),
-			);
-			if (write.length === 1 && write[0] === 0) return write as [0];
-			else throw Error(`bad write ${write}`);
-		} catch (e) {
-			console.error("why is this happening", e);
-		}
+		const write = await this.command(
+			CamUsbCommand.WRITE_REGISTER,
+			new Uint16Array([register, value]),
+		);
+		if (write.length === 1 && write[0] === 0) return write as [0];
+		else throw Error(`bad write ${write}`);
 	}
 
 	async readRegister(register: number): Promise<[number, number]> {
