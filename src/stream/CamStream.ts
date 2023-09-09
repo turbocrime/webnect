@@ -11,7 +11,6 @@ export class CamStream
 	implements TransformStream<CamIsoPacket, ArrayBuffer | ImageData>
 {
 	private _mode: CamMode;
-	private _readable: ReadableStream;
 
 	private packetStream?: ReadableStream<CamIsoPacket>;
 
@@ -43,7 +42,6 @@ export class CamStream
 		this.rawStream = rawStream;
 		this.packetSink = packetSink;
 		if (packets) packets.pipeTo(this.packetSink);
-		this._readable = this.rawStream;
 
 		if (this.rawDeveloper) {
 			const { readable: imageStream, writable: frameSink } =
@@ -51,17 +49,11 @@ export class CamStream
 			this.imageStream = imageStream;
 			this.frameSink = frameSink;
 			this.rawStream.pipeTo(this.frameSink);
-			this._readable = this.imageStream;
 		}
 	}
 
 	get readable() {
-		const currentReadable =
-			this._readable ?? this.imageStream ?? this.rawStream;
-		const [keep, send] = currentReadable.tee();
-		console.log("teeing readable on camstream", keep, send);
-		this._readable = keep;
-		return send;
+		return this.imageStream ?? this.rawStream;
 	}
 
 	get writable() {
@@ -102,7 +94,6 @@ export class CamFrameDeveloper implements Transformer<ArrayBuffer, ImageData> {
 	set mode(newMode: CamMode) {
 		this._mode = newMode;
 		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
-		console.log("selected fn", this.rawToRgba);
 		this.frameWidth = (RESOLUTIONS[newMode.res] ?? [640, 480])[0];
 	}
 
