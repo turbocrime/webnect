@@ -73,12 +73,11 @@ export class CamStream
 	}
 
 	set mode(mode: CamMode) {
+		// TODO: pause like UnderlyingIsochronousSource?
 		this._mode = mode;
 		this.frameAssembler.frameSize = selectFrameSize(mode);
 		if (this.rawDeveloper) this.rawDeveloper.mode = mode;
 	}
-
-	//getCanvas() { return CamCanvas.create(this._mode, this.readable); }
 }
 
 type ToRgba = (b: ArrayBuffer) => Uint8ClampedArray;

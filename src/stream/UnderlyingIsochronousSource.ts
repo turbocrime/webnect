@@ -95,15 +95,15 @@ export class UnderlyingIsochronousSource
 		this.device.close();
 	}
 
-	toggle(s: "stop" | "go") {
-		console.log("TOGGLE", s, CamIsoEndpoint[this.endpointNumber]);
+	active(s: "stop" | "go") {
 		if (s === "stop")
-			this.paused = new Promise((resolve) => {
+			this.paused = new Promise<void>((resolve) => {
 				this.unpause = resolve;
 			});
 		else {
 			this.paused = false;
 			this.unpause();
 		}
+		return s;
 	}
 }

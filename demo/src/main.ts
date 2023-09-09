@@ -7,13 +7,29 @@ import {
 	KinectMotor,
 	KinectProductId,
 	usbSupport,
-	readAsGenerator,
 	unpackGray,
-	unpackGrayToRgba,
-	bayerToRgba,
-	DEFAULTS,
+	CamModeDefaults,
+	CamModeSet,
 	CamIsoEndpoint,
 } from "@webnect/webnect";
+
+const readAsGenerator = async function* (
+	streamOrReader: ReadableStream | ReadableStreamDefaultReader,
+) {
+	const isReadableStream = "getReader" in streamOrReader;
+	let reader: ReadableStreamDefaultReader;
+	if (isReadableStream) reader = streamOrReader.getReader();
+	else reader = streamOrReader;
+	try {
+		while (true) {
+			const frame = await reader.read();
+			if (frame.done) break;
+			yield frame.value;
+		}
+	} finally {
+		reader.releaseLock();
+	}
+};
 
 if (usbSupport) document.getElementById("annoying")!.remove();
 
@@ -147,6 +163,14 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 		await runStream();
 	});
 
+	const videoFlipCb = document.querySelector<HTMLInputElement>("#flipCb")!;
+	videoFlipCb.addEventListener("change", async () => {
+		camera.setMode({
+			[CamIsoEndpoint.DEPTH]: { flip: videoFlipCb.checked ? 1 : 0 },
+			[CamIsoEndpoint.VIDEO]: { flip: videoFlipCb.checked ? 1 : 0 },
+		} as CamModeSet);
+	});
+
 	const videoFsBtn = document.querySelector<HTMLButtonElement>("#videoFsBtn")!;
 	videoFsBtn.addEventListener("click", () => {
 		videoCanvas.requestFullscreen();
@@ -184,13 +208,19 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			switch (videoModeOption.value) {
 				case "depth": {
 					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: DEFAULTS.DEPTH,
-						[CamIsoEndpoint.VIDEO]: DEFAULTS.OFF,
+						[CamIsoEndpoint.DEPTH]: {
+							...CamModeDefaults.DEPTH,
+							flip: videoFlipCb.checked ? 1 : 0,
+						},
+						[CamIsoEndpoint.VIDEO]: CamModeDefaults.OFF,
 					});
-					const customDepthRgba = (frame: ArrayBuffer) => {
-						const rgbaFrame = new Uint8ClampedArray(640 * 480 * 4);
+					const customDepthRgba = (
+						raw: ArrayBuffer,
+						rgba?: Uint8ClampedArray,
+					) => {
+						const rgbaFrame = rgba ?? new Uint8ClampedArray(640 * 480 * 4);
 						// frame is 11bit/u16gray, expand for canvas rgba
-						const grayFrame = unpackGray(11, frame);
+						const grayFrame = unpackGray(11, raw);
 
 						// moving color ramps
 						const colorMarch = window.performance.now() / 10;
@@ -211,21 +241,28 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 					};
 					if (camera.depth.rawDeveloper)
 						camera.depth.rawDeveloper.customFn = customDepthRgba;
+					else console.error("failed to set custom deraw");
 					camStream = camera.depth.readable as ReadableStream<ImageData>;
 					break;
 				}
 				case "visible": {
 					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: DEFAULTS.OFF,
-						[CamIsoEndpoint.VIDEO]: DEFAULTS.VISIBLE,
+						[CamIsoEndpoint.DEPTH]: CamModeDefaults.OFF,
+						[CamIsoEndpoint.VIDEO]: {
+							...CamModeDefaults.VISIBLE,
+							flip: videoFlipCb.checked ? 1 : 0,
+						},
 					});
 					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
 				}
 				case "ir": {
 					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: DEFAULTS.OFF,
-						[CamIsoEndpoint.VIDEO]: DEFAULTS.INFRARED,
+						[CamIsoEndpoint.DEPTH]: CamModeDefaults.OFF,
+						[CamIsoEndpoint.VIDEO]: {
+							...CamModeDefaults.INFRARED,
+							flip: videoFlipCb.checked ? 1 : 0,
+						},
 					});
 					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
@@ -235,6 +272,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			}
 			for await (const drawFrame of readAsGenerator(camStream)) {
 				if (breakLoop) break;
+				//videoCanvas2dCtx.clearRect(0, 0, 1280, 1024);
 				if (document.fullscreenElement)
 					videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
 				else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
@@ -250,10 +288,10 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 	const endStream = async () => {
 		breakLoop = true;
 		await camera.setMode({
-			[CamIsoEndpoint.DEPTH]: DEFAULTS.OFF,
-			[CamIsoEndpoint.VIDEO]: DEFAULTS.OFF,
+			[CamIsoEndpoint.DEPTH]: CamModeDefaults.OFF,
+			[CamIsoEndpoint.VIDEO]: CamModeDefaults.OFF,
 		});
-		videoCanvas2dCtx.clearRect(0, 0, 640, 480);
+		//videoCanvas2dCtx.clearRect(0, 0, 640, 480);
 	};
 
 	runStream();

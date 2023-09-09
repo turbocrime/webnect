@@ -295,23 +295,6 @@ export const selectFnToRgba = (
 		return new Uint8ClampedArray(f);
 	};
 };
-export const readAsGenerator = async function* (
-	streamOrReader: ReadableStream | ReadableStreamDefaultReader,
-) {
-	const isReadableStream = "getReader" in streamOrReader;
-	let reader: ReadableStreamDefaultReader;
-	if (isReadableStream) reader = streamOrReader.getReader();
-	else reader = streamOrReader;
-	try {
-		while (true) {
-			const frame = await reader.read();
-			if (frame.done) break;
-			yield frame.value;
-		}
-	} finally {
-		reader.releaseLock();
-	}
-};
 
 export const frameToImageData = (mode: CamMode) => {
 	const fn = selectFnToRgba(mode)!;

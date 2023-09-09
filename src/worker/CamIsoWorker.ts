@@ -1,9 +1,19 @@
+import type { CamIsoPacket } from "../stream/CamIsoParser";
+
+declare const navigator: Navigator & {
+	usb: USB;
+};
+
+declare const self: Worker & {
+	postMessage: (msg: CamIsoWorkerReply, transfer?: Transferable[]) => void;
+};
+
 import {
 	CamIsoEndpoint,
 	CamIsoPacketFlag,
 	CamIsoPacketSize,
 } from "../CamEnums";
-import { CamIsoParser, CamIsoPacket } from "../stream/CamIsoParser";
+import { CamIsoParser } from "../stream/CamIsoParser";
 import { UnderlyingIsochronousSource } from "../stream/UnderlyingIsochronousSource";
 
 export type CamIsoWorkerOpts = {
@@ -19,13 +29,14 @@ export type CamIsoWorkerInitMsg = {
 	config: CamIsoWorkerOpts;
 };
 
-export type CamIsoWorkerToggleMsg = {
-	type: "toggle";
+export type CamIsoWorkerActiveMsg = {
+	type: "active";
 	depth: "stop" | "go";
 	video: "stop" | "go";
 };
 
-export type CamIsoWorkerMsg = CamIsoWorkerInitMsg | CamIsoWorkerToggleMsg;
+export type CamIsoWorkerMsg = CamIsoWorkerInitMsg | CamIsoWorkerActiveMsg;
+export type CamIsoWorkerReply = CamIsoWorkerInitReply | CamIsoWorkerActiveReply;
 
 export type CamIsoWorkerInitReply = {
 	type: "init";
@@ -33,13 +44,7 @@ export type CamIsoWorkerInitReply = {
 	video: ReadableStream<CamIsoPacket>;
 };
 
-declare const navigator: Navigator & {
-	usb: USB;
-};
-
-declare const self: Worker & {
-	postMessage: (msg: CamIsoWorkerInitReply, transfer?: Transferable[]) => void;
-};
+export type CamIsoWorkerActiveReply = CamIsoWorkerActiveMsg;
 
 const DEFAULT_USB_DEV = 0;
 const DEFAULT_USB_IFACE = 0;
@@ -67,10 +72,15 @@ self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 			);
 			break;
 		}
-		case "toggle": {
+		case "active": {
 			const { depth, video } = event.data;
-			sources[CamIsoEndpoint.DEPTH].toggle(depth);
-			sources[CamIsoEndpoint.VIDEO].toggle(video);
+			sources[CamIsoEndpoint.DEPTH].active(depth);
+			sources[CamIsoEndpoint.VIDEO].active(video);
+			self.postMessage({
+				type: "active",
+				depth,
+				video,
+			} as CamIsoWorkerActiveReply);
 			break;
 		}
 		default: {

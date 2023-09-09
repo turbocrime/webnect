@@ -52,11 +52,12 @@
     </legend>
     <button id="videoFsBtn">FullscreenVideo</button>
     <select id="videoMode">
+      <option value="depth">Depth</option>
       <option value="visible">Visible</option>
       <option value="ir">Infrared</option>
-      <option value="depth">Depth</option>
     </select>
     <div>FPS: <span id="videoFps"></span></div>
+    <label><input type="checkbox" id="flipCb"></input>Flip</label>
     <div class="canvasBack">
       <canvas id="videoCanvas" width="640" height="480"></canvas>
     </div>

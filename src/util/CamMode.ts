@@ -13,7 +13,7 @@ import {
 } from "../CamEnums";
 
 export type CamMode = {
-	stream: CamType | OFF;
+	stream: CamType;
 	format: CamFmtDepth | CamFmtVisible | CamFmtInfrared;
 	res: CamRes;
 	fps: CamFps;
@@ -55,7 +55,7 @@ export const selectFrameSize = ({
 			return (frameDimension[res] * bitsPerPixel[(stream << 4) | format]) / 8;
 		case CamType.INFRARED:
 			return (irFrameDimension[res] * bitsPerPixel[(stream << 4) | format]) / 8;
-		case OFF:
+		case CamType.NONE:
 			return 0;
 		default:
 			throw new TypeError("Invalid stream type");
@@ -75,7 +75,6 @@ export const selectPacketFlag = (mode: CamMode) =>
 const DEFAULT_MODE_VISIBLE = {
 	stream: CamType.VISIBLE,
 	format: CamFmtVisible.BAYER_8B,
-	//format: CamFmtVisible.YUV_16B,
 	res: CamRes.MED,
 	flip: OFF,
 	fps: CamFps.F_30P,
@@ -97,7 +96,7 @@ const DEFAULT_MODE_DEPTH = {
 	fps: CamFps.F_30P,
 };
 
-export const STREAM_OFF = { stream: OFF } as CamMode;
+export const STREAM_OFF = { stream: CamType.NONE } as CamMode;
 
 export const modes = (depthMode = STREAM_OFF, videoMode = STREAM_OFF) =>
 	({
@@ -105,23 +104,24 @@ export const modes = (depthMode = STREAM_OFF, videoMode = STREAM_OFF) =>
 		[CamIsoEndpoint.VIDEO]: videoMode,
 	}) as CamModeSet;
 
-export const DEFAULTS = {
+export const CamModeDefaults = {
 	[CamType.VISIBLE]: DEFAULT_MODE_VISIBLE,
 	VISIBLE: DEFAULT_MODE_VISIBLE,
 	[CamType.INFRARED]: DEFAULT_MODE_INFRARED,
 	INFRARED: DEFAULT_MODE_INFRARED,
 	[CamType.DEPTH]: DEFAULT_MODE_DEPTH,
 	DEPTH: DEFAULT_MODE_DEPTH,
-	[OFF]: STREAM_OFF,
+	[CamType.NONE]: STREAM_OFF,
+	NONE: STREAM_OFF,
 	OFF: STREAM_OFF,
 };
 
 export const parseModeOpts = (
 	existing: CamModeSet,
-	useDefaults = false as typeof DEFAULTS | boolean,
+	useDefaults = false as typeof CamModeDefaults | boolean,
 	modeOpt = {} as Record<CamIsoEndpoint, Partial<CamMode>>,
 ): Record<CamIsoEndpoint, CamMode> => {
-	const defaults = useDefaults === true ? DEFAULTS : useDefaults;
+	const defaults = useDefaults === true ? CamModeDefaults : useDefaults;
 
 	const getUpdatedMode = (
 		endpoint: CamIsoEndpoint,
@@ -135,11 +135,9 @@ export const parseModeOpts = (
 		},
 	});
 
-	console.log("resolving mode options", modeOpt);
 	const fullMode = {
 		...getUpdatedMode(CamIsoEndpoint.VIDEO, modeOpt[CamIsoEndpoint.VIDEO]),
 		...getUpdatedMode(CamIsoEndpoint.DEPTH, modeOpt[CamIsoEndpoint.DEPTH]),
 	} as Record<CamIsoEndpoint, CamMode>;
-	console.log("resolved to", fullMode);
 	return fullMode;
 };

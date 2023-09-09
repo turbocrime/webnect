@@ -68,6 +68,7 @@ export enum CamFmtInfrared {
 }
 
 export enum CamType {
+	NONE = 0,
 	VISIBLE = 0b001,
 	DEPTH = 0b010,
 	INFRARED = 0b011,
