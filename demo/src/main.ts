@@ -307,12 +307,12 @@ function setupMotorDemo(motorDevice: USBDevice) {
 	const tiltInput = document.querySelector<HTMLInputElement>("#tiltInput")!;
 	tiltInput.addEventListener("change", () => {
 		const angle = parseInt(tiltInput.value);
-		motor!.cmdSetTilt(angle);
+		motor!.setTilt(angle);
 	});
 
 	setInterval(() => {
 		motor!
-			.cmdGetState()
+			.getState()
 			.then(
 				(motorState: {
 					angle?: number;
