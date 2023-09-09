@@ -2,10 +2,6 @@
 	"compilerOptions": {
 		"module": "es2022",
 		"target": "es2022",
-		"lib": [
-			"dom",
-			"es2022"
-		],
 		"strict": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
