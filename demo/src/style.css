@@ -39,8 +39,13 @@ label {
 }
 
 #plugItIn img {
-    float: right;
-    width: 50%;
+    width: 100%;
+    max-width: 640px;
+}
+
+#plugItIn video {
+    width: 100%;
+    max-width: 640px;
 }
 
 .disabled .canvasBack {

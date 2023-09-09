@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>kinect WebUSB demo</title>
+  <title>webnect demo</title>
 </head>
 
 <body>
@@ -19,6 +19,10 @@
     <p>when your kinect is plugged in, activate it with the UI below</p>
     <img src="https://github.com/turbocrime/webnect/assets/134443988/141bb8b5-fdf4-45a4-b58e-2f00b590fae8"
       alt="an image of the appropriate kinect">
+    <video autoplay loop>
+      <source src="https://github.com/turbocrime/webnect/assets/134443988/40879425-cd91-4bae-a14f-633dc0f8d88c">
+      </source>
+    </video>
     <p>Firefox, Safari are not supported ;_; only chrom</p>
     <p>i have only tried this with my kinect. you can try it on yours if you like</p>
     <fieldset id="requestDevices">
@@ -50,12 +54,16 @@
     <legend>
       <h2>Camera</h2>
     </legend>
-    <button id="fsDepth">Fullscreen</button>
-    <label>
-      <input type="checkbox" id="depthStream"></input>Depth Stream
-    </label>
+    <button id="videoFsBtn">FullscreenVideo</button>
+    <select id="videoMode">
+      <option value="depth">Depth</option>
+      <option value="visible">Visible</option>
+      <option value="ir">Infrared</option>
+    </select>
+    <div>FPS: <span id="videoFps"></span></div>
+    <label><input type="checkbox" id="flipCb"></input>Flip</label>
     <div class="canvasBack">
-      <canvas id="depthCanvas" width="640" height="480"></canvas>
+      <canvas id="videoCanvas" width="640" height="480"></canvas>
     </div>
   </fieldset>
 

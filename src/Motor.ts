@@ -1,50 +1,30 @@
-export const MAX_TILT = 30;
-export const ACCEL = 819;
-
-enum MotorUsbControl {
-	SET_LED = 0x06,
-	SET_TILT = 0x31,
-	GET_STATE = 0x32,
-}
-
-export enum ServoMode {
-	IDLE = 0,
-	LIMIT = 1,
-	MOVING = 4,
-}
-
-export enum LedMode {
-	OFF = 0,
-	GREEN = 1,
-	RED = 2,
-	AMBER = 3,
-	BLINK_GREEN = 4,
-	ALSO_BLINK_GREEN = 5, // same as 4?
-	BLINK_RED_AMBER = 6,
-}
+import { MotorUsbControl, MotorLed, MotorServoState } from "./enum/motor";
 
 export type MotorState = {
 	angle?: number; // raw, half-degrees
-	servo: ServoMode;
+	servo: MotorServoState;
 	accel: [number, number, number];
 };
 
-export class KinectMotor {
+export const MOTOR_MAX_TILT = 30;
+const MOTOR_STATE_SIZE = 10;
+const GRAVITY = 9.80665;
+const ACCEL = 819;
+
+export const accelToG = (x: number, y: number, z: number) => {
+	const ag = ACCEL * GRAVITY;
+	return [x / ag, y / ag, z / ag];
+};
+export class Motor {
 	dev: USBDevice;
 	state?: MotorState;
-	led?: LedMode;
+	led?: MotorLed;
 
 	constructor(device: USBDevice) {
 		this.dev = device;
 	}
 
-	static accelToG(x: number, y: number, z: number) {
-		const ag = ACCEL * 9.80665;
-		return [x / ag, y / ag, z / ag];
-	}
-
-	async cmdGetState() {
-		const STATE_SIZE_BYTES = 10;
+	async getState() {
 		const { data } = await this.dev.controlTransferIn(
 			{
 				requestType: "vendor",
@@ -53,10 +33,10 @@ export class KinectMotor {
 				value: 0,
 				index: 0,
 			},
-			STATE_SIZE_BYTES,
+			MOTOR_STATE_SIZE,
 		);
 
-		// TODO: validate header at data[0]
+		// TODO: validate header
 
 		const accel: [number, number, number] = [
 			data!.getInt16(2),
@@ -74,18 +54,18 @@ export class KinectMotor {
 		return this.state;
 	}
 
-	async cmdSetTilt(angle: number) {
-		return await this.dev.controlTransferOut({
+	setTilt(angle: number) {
+		return this.dev.controlTransferOut({
 			requestType: "vendor",
 			recipient: "device",
 			request: MotorUsbControl.SET_TILT,
-			value: angle % MAX_TILT, // crude limit
+			value: angle % MOTOR_MAX_TILT, // crude limit
 			index: 0,
 		});
 	}
 
-	async cmdSetLed(led: LedMode) {
-		return await this.dev.controlTransferOut({
+	setLed(led: MotorLed) {
+		return this.dev.controlTransferOut({
 			requestType: "vendor",
 			recipient: "device",
 			request: MotorUsbControl.SET_LED,

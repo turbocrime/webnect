@@ -1,24 +1,28 @@
-# webnect *...now with [live demo](https://turbocrime.github.io/webnect/)!*
+# webnect
+
+**(try [live demo](https://turbocrime.github.io/webnect/))**
 
 this is a webusb driver for microsoft's xbox360 kinect.
 
-![webnect](https://github.com/turbocrime/webnect/assets/134443988/1bfbb58f-4a5a-4276-8cde-b80c7d91b63a)
+<https://github.com/turbocrime/webnect/assets/134443988/40879425-cd91-4bae-a14f-633dc0f8d88c>
 
 chrome only :'C mozzy dont do webusb
 
 i have never written a usb driver before, nor even a typescript library, so critique is welcome.
 
-currently, this driver only supports "Xbox NUI Motor" PID `0x02b0` and "Xbox NUI Camera" PID `0x02ae` devices, labelled "Model 1414", because that's what i found at goodwill. i believe there's a few externally-identical models of "kinect", some with dramatic hardware revisions. if your device doesn't work with this, please verify that it works at all, and then send me the details.
+this driver at least works with "Xbox NUI Motor" PID `0x02b0` and "Xbox NUI Camera" PID `0x02ae` devices, labelled "Model 1414", because that's what i found at goodwill. i there may be a few externally-identical models of "kinect", some with dramatic hardware revisions. if your device doesn't work with this, please verify that it works at all, and then send me the details.
 
 ## what
 
 the kinect is an early consumer depth sensor based on structured light projection, plus some other goodies. it was released in 2010 as a gamer thing and nobody cares about it anymore except me
 
-they're fun, and they go for like $5 now. plus they're usb2, so i can drive them with throwaway SBCs like an rpi3. maybe not with this driver, but that's how i got familiar. i been using them for video synth input, and interactive generative art installations (yes i do parties, hmu) but it's the kind of thing you really gotta see in person
+they're fun, and they go for like $5 now. plus they're usb2, so i can drive them with throwaway SBCs like an rpi3. maybe not with this driver, but that's how i got familiar. i been using them for video synth input, and interactive generative art installations
 
 a webusb driver lets more folks see it in person :) after i rewrite everything :)
 
 ## ware
+
+original kinect only.
 
 ### Xbox NUI Motor
 
@@ -28,10 +32,11 @@ a webusb driver lets more folks see it in person :) after i rewrite everything :
 
 ### Xbox NUI Camera
 
-* depth camera 11bit only
-* thats it for now
-* no ir
-* no visible
+* depth 11bpp, 10bpp
+* visible 8bpp bayer
+* infrared 10bpp
+
+visible and infrared stream from the same endpoint, so you can only have one at a time.
 
 ## why
 
@@ -41,11 +46,13 @@ whatever. its the future and webusb is real
 
 ## how
 
+go dig your kinect out of the closet. plug it in. open <https://turbocrime.github.io/webnect>
+
+## diy
+
 available on npm as [`@webnect/webnect`](https://www.npmjs.com/package/@webnect/webnect)
 
-for local demos, clone the repo.
-
-go dig your kinect out of the closet. plug it in. run
+or for a local demo, clone this repo. run
 
 ```sh
 $ pnpm install
@@ -79,24 +86,24 @@ devices? : {
 
 pass a boolean indicating your desire to request acquisition, or pass a USBDevice if you have already one already acquired.
 
-## it dont work
+### um its broekn
 
 if you see an empty device selection modal, you probably have the wrong model kinect. you can check your usb devices with `lsusb` on linux or on `system_profiler SPUSBDataType` on macos
 
 if you see glitchy stream output, haha nice. cool
 
-## bad parts
+### bad parts
 
 a single kinect is technically three devices in a trenchcoat. afaict there's no way to associate them, because webusb won't expose bus position. it doesn't matter; you probably only plugged in one kinect anyway.
 
 also, typescript aint exactly the optimal language for bitmath or destructuring binary data
 
-## the future
+## way
 
-the mathy parts are an obvious candidate for webgpu acceleration. do NOT send a patch i wanna do it
+the mathy parts are an obvious candidate for assemblyscript and webgpu acceleration. do NOT send a patch i wanna do it
 
-i should probably learn how to actually use canvas and arraybuffers
+i should probably learn how to actually use canvas and streams
 
-probably going after ir video next, then bayer/yuv, and then audio device and firmware stuff.
+probably going after pose features next, maybe registration of visible light to depth frames. and then audio device and firmware stuff.
 
 someday.... kinect2?

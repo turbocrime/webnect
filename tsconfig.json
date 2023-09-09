@@ -4,15 +4,13 @@
 		"target": "es2022",
 		"lib": [
 			"dom",
-			"es2022",
+			"es2022"
 		],
 		"strict": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"outDir": "dist",
-		"declaration": true,
-		"declarationMap": true,
-		"sourceMap": true,
+		"declaration": true
 	},
 	"include": [
 		"src"
