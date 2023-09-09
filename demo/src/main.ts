@@ -3,15 +3,12 @@ import "./style.css";
 import {
 	claimNuiCamera,
 	claimNuiMotor,
-	KinectCamera,
-	KinectMotor,
-	KinectProductId,
-	usbSupport,
-	unpackGray,
-	CamModeDefaults,
-	CamModeSet,
-	CamIsoEndpoint,
+	ProductId,
+	Camera,
+	Motor,
 } from "@webnect/webnect";
+
+import { unpackGray, DefaultModes, modes } from "@webnect/webnect/util";
 
 const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
 	const rgbaFrame = rgba ?? new Uint8ClampedArray(640 * 480 * 4);
@@ -32,7 +29,8 @@ const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
 	return rgbaFrame;
 };
 
-if (usbSupport) document.getElementById("annoying")!.remove();
+if (typeof navigator?.usb?.getDevices === "function")
+	document.getElementById("annoying")!.remove();
 
 let existingUsb = await navigator.usb.getDevices();
 const forgottenUsb = new Array();
@@ -86,7 +84,7 @@ const updateExistingUsb = async () => {
 	renderExistingUsb();
 };
 
-async function setupKinect() {
+async function setupDevice() {
 	await updateExistingUsb();
 	if (existingUsb.length) {
 		plugItIn.hidden = true;
@@ -98,23 +96,19 @@ async function setupKinect() {
 		} = { motor: false, camera: false, audio: false };
 		existingUsb.forEach((device) => {
 			switch (device.productId) {
-				case KinectProductId.NUI_MOTOR:
+				case ProductId.NUI_MOTOR:
 					devicesArg.motor = device;
 					break;
-				case KinectProductId.NUI_CAMERA:
+				case ProductId.NUI_CAMERA:
 					devicesArg.camera = device;
-					break;
-				case KinectProductId.NUI_AUDIO:
-					devicesArg.audio = device;
 					break;
 			}
 		});
-		console.log("existing setup");
 		if (devicesArg.camera) setupCameraDemo(devicesArg.camera as USBDevice);
 		if (devicesArg.motor) setupMotorDemo(devicesArg.motor as USBDevice);
 	}
 }
-setupKinect();
+setupDevice();
 
 document
 	.querySelector<HTMLButtonElement>("#connectUsb")!
@@ -130,12 +124,12 @@ document
 		};
 		if (!(motor || camera || audio))
 			return alert("Select at least one device.");
-		setupKinect();
+		setupDevice();
 	});
 
 function setupCameraDemo(cameraDevice: USBDevice) {
 	cameraDevice.open();
-	const camera = new KinectCamera(cameraDevice);
+	const camera = new Camera(cameraDevice);
 	const cameraDemo =
 		document.querySelector<HTMLFieldSetElement>("#cameraDemo")!;
 	cameraDemo.hidden = false;
@@ -171,10 +165,12 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 	const videoFlipCb = document.querySelector<HTMLInputElement>("#flipCb")!;
 	videoFlipCb.addEventListener("change", async () => {
-		camera.setMode({
-			[CamIsoEndpoint.DEPTH]: { flip: videoFlipCb.checked ? 1 : 0 },
-			[CamIsoEndpoint.VIDEO]: { flip: videoFlipCb.checked ? 1 : 0 },
-		} as CamModeSet);
+		camera.setMode(
+			modes(
+				{ flip: videoFlipCb.checked ? 1 : 0 },
+				{ flip: videoFlipCb.checked ? 1 : 0 },
+			),
+		);
 	});
 
 	const videoFsBtn = document.querySelector<HTMLButtonElement>("#videoFsBtn")!;
@@ -206,13 +202,15 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			await camera.ready;
 			switch (videoModeOption.value) {
 				case "depth": {
-					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: {
-							...CamModeDefaults.DEPTH,
-							flip: videoFlipCb.checked ? 1 : 0,
-						},
-						[CamIsoEndpoint.VIDEO]: CamModeDefaults.OFF,
-					});
+					await camera.setMode(
+						modes(
+							{
+								...DefaultModes.DEPTH,
+								flip: videoFlipCb.checked ? 1 : 0,
+							},
+							DefaultModes.OFF,
+						),
+					);
 
 					if (camera.depth.rawDeveloper)
 						camera.depth.rawDeveloper.customFn = customDepthRgba;
@@ -221,24 +219,22 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 					break;
 				}
 				case "visible": {
-					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: CamModeDefaults.OFF,
-						[CamIsoEndpoint.VIDEO]: {
-							...CamModeDefaults.VISIBLE,
+					await camera.setMode(
+						modes(DefaultModes.OFF, {
+							...DefaultModes.VISIBLE,
 							flip: videoFlipCb.checked ? 1 : 0,
-						},
-					});
+						}),
+					);
 					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
 				}
 				case "ir": {
-					await camera.setMode({
-						[CamIsoEndpoint.DEPTH]: CamModeDefaults.OFF,
-						[CamIsoEndpoint.VIDEO]: {
-							...CamModeDefaults.INFRARED,
+					await camera.setMode(
+						modes(DefaultModes.OFF, {
+							...DefaultModes.INFRARED,
 							flip: videoFlipCb.checked ? 1 : 0,
-						},
-					});
+						}),
+					);
 					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
 				}
@@ -274,10 +270,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 	const endStream = async () => {
 		if (camStream.locked) reader.releaseLock();
-		await camera.setMode({
-			[CamIsoEndpoint.DEPTH]: CamModeDefaults.OFF,
-			[CamIsoEndpoint.VIDEO]: CamModeDefaults.OFF,
-		});
+		await camera.setMode(modes(DefaultModes.OFF, DefaultModes.OFF));
 	};
 
 	runStream();
@@ -285,7 +278,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 function setupMotorDemo(motorDevice: USBDevice) {
 	motorDevice.open();
-	const motor = new KinectMotor(motorDevice);
+	const motor = new Motor(motorDevice);
 	const motorDemo = document.querySelector<HTMLFieldSetElement>("#motorDemo")!;
 	motorDemo.hidden = false;
 	motorDemo.disabled = false;

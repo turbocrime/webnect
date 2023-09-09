@@ -1,8 +1,8 @@
-import { CamUsbCommand, CamUsbControl, CamMagic } from "../CamEnums";
+import { CamUsbCommand, CamUsbControl, CamMagic } from "./enum/cam";
 
 const CMD_HEADER_SIZE = 8; // bytes
-const COMMAND_RESPONSE_TIMEOUT_MS = 200;
-const COMMAND_RESPONSE_RETRY_DELAY_MS = 15;
+const RESPONSE_TIMEOUT_MS = 200;
+const RESPONSE_RETRY_MS = 15;
 
 export type CamCommandOut = CamCommand & {
 	magic: CamMagic.COMMAND_OUT;
@@ -139,7 +139,7 @@ export class CamCommandIO {
 		});
 
 		// TODO: better rate limit
-		setTimeout(() => this.pullResponse(), COMMAND_RESPONSE_RETRY_DELAY_MS);
+		setTimeout(() => this.pullResponse(), RESPONSE_RETRY_MS);
 	}
 
 	async sendCmd(cmd: CamCommandOut): Promise<CamCommandIn> {
@@ -166,7 +166,7 @@ export class CamCommandIO {
 			new Promise<never>((_, reject) =>
 				setTimeout(
 					() => reject(new Error(`Command response timeout ${cmd.cmdTag}`)),
-					COMMAND_RESPONSE_TIMEOUT_MS,
+					RESPONSE_TIMEOUT_MS,
 				),
 			),
 		]).finally(() => {

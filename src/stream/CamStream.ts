@@ -1,5 +1,5 @@
-import type { CamMode } from "../util/CamMode";
-import { selectFrameSize, STREAM_OFF } from "../util/CamMode";
+import type { CamMode } from "../util/mode";
+import { selectFrameSize, STREAM_OFF } from "../util/mode";
 import { CamFrameAssembler } from "./CamFrameAssembler";
 import { CamIsoPacket } from "./CamIsoParser";
 

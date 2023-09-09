@@ -1,4 +1,4 @@
-import { CamIsoPacketFlag, CamMagic } from "../CamEnums";
+import { CamIsoPacketFlag, CamMagic } from "../enum/cam";
 import { SerializedUSBIsochronousInTransferResult } from "./UnderlyingIsochronousSource";
 
 export type CamIsoPacket = {

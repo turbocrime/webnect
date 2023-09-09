@@ -1,6 +1,4 @@
-import { MotorUsbControl, MotorLed, MotorServoState } from "./MotorEnums";
-
-export * from "./MotorEnums";
+import { MotorUsbControl, MotorLed, MotorServoState } from "./enum/motor";
 
 export type MotorState = {
 	angle?: number; // raw, half-degrees
@@ -17,7 +15,7 @@ export const accelToG = (x: number, y: number, z: number) => {
 	const ag = ACCEL * GRAVITY;
 	return [x / ag, y / ag, z / ag];
 };
-export class KinectMotor {
+export class Motor {
 	dev: USBDevice;
 	state?: MotorState;
 	led?: MotorLed;
@@ -26,7 +24,7 @@ export class KinectMotor {
 		this.dev = device;
 	}
 
-	async cmdGetState() {
+	async getState() {
 		const { data } = await this.dev.controlTransferIn(
 			{
 				requestType: "vendor",
@@ -38,7 +36,7 @@ export class KinectMotor {
 			MOTOR_STATE_SIZE,
 		);
 
-		// TODO: validate header at data[0]
+		// TODO: validate header
 
 		const accel: [number, number, number] = [
 			data!.getInt16(2),
@@ -56,7 +54,7 @@ export class KinectMotor {
 		return this.state;
 	}
 
-	cmdSetTilt(angle: number) {
+	setTilt(angle: number) {
 		return this.dev.controlTransferOut({
 			requestType: "vendor",
 			recipient: "device",
@@ -66,7 +64,7 @@ export class KinectMotor {
 		});
 	}
 
-	cmdSetLed(led: MotorLed) {
+	setLed(led: MotorLed) {
 		return this.dev.controlTransferOut({
 			requestType: "vendor",
 			recipient: "device",

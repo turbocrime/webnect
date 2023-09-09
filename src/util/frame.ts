@@ -1,11 +1,11 @@
-import type { CamMode } from "./CamMode";
+import type { CamMode } from "./mode";
 import {
 	CamFmtDepth,
 	CamFmtInfrared,
 	CamFmtVisible,
 	CamRes,
 	CamType,
-} from "../CamEnums";
+} from "../enum/cam";
 
 export const unpackGray = (bitsPerPixel: number, packedBuffer: ArrayBuffer) => {
 	const packed = new Uint8Array(packedBuffer);

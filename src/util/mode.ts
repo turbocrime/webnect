@@ -10,7 +10,7 @@ import {
 	CamIsoPacketSize,
 	OFF,
 	ON,
-} from "../CamEnums";
+} from "../enum/cam";
 
 export type CamMode = {
 	stream: CamType;
@@ -98,13 +98,16 @@ const DEFAULT_MODE_DEPTH = {
 
 export const STREAM_OFF = { stream: CamType.NONE } as CamMode;
 
-export const modes = (depthMode = STREAM_OFF, videoMode = STREAM_OFF) =>
+export const modes = (
+	depthMode?: Partial<CamMode>,
+	videoMode?: Partial<CamMode>,
+) =>
 	({
-		[CamIsoEndpoint.DEPTH]: depthMode,
-		[CamIsoEndpoint.VIDEO]: videoMode,
+		[CamIsoEndpoint.DEPTH]: depthMode ?? STREAM_OFF,
+		[CamIsoEndpoint.VIDEO]: videoMode ?? STREAM_OFF,
 	}) as CamModeSet;
 
-export const CamModeDefaults = {
+export const DefaultModes = {
 	[CamType.VISIBLE]: DEFAULT_MODE_VISIBLE,
 	VISIBLE: DEFAULT_MODE_VISIBLE,
 	[CamType.INFRARED]: DEFAULT_MODE_INFRARED,
@@ -118,10 +121,10 @@ export const CamModeDefaults = {
 
 export const parseModeOpts = (
 	existing: CamModeSet,
-	useDefaults = false as typeof CamModeDefaults | boolean,
+	useDefaults = false as typeof DefaultModes | boolean,
 	modeOpt = {} as Record<CamIsoEndpoint, Partial<CamMode>>,
 ): Record<CamIsoEndpoint, CamMode> => {
-	const defaults = useDefaults === true ? CamModeDefaults : useDefaults;
+	const defaults = useDefaults === true ? DefaultModes : useDefaults;
 
 	const getUpdatedMode = (
 		endpoint: CamIsoEndpoint,

@@ -1,4 +1,4 @@
-import { CamIsoEndpoint } from "../CamEnums";
+import { CamIsoEndpoint } from "../enum/cam";
 
 const DEFAULT_BATCH_SIZE = 256;
 const DEFAULT_PULL_RATE_LIMIT = 5;

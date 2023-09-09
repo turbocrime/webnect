@@ -1,14 +1,11 @@
-export const usbSupport = typeof navigator?.usb?.getDevices === "function";
+const usbSupport = typeof navigator?.usb?.getDevices === "function";
 if (!usbSupport) console.error("WebUSB supported not detected!");
 
-import { KinectCamera } from "./KinectCamera";
-import { KinectMotor } from "./KinectMotor";
-
-export enum KinectVendorId {
+export enum VendorId {
 	MICROSOFT = 0x045e,
 }
 
-export enum KinectProductId {
+export enum ProductId {
 	NUI_MOTOR = 0x02b0,
 	NUI_CAMERA = 0x02ae,
 	NUI_AUDIO = 0x02ad,
@@ -20,8 +17,8 @@ export const claimNuiCamera = async (d?: USBDevice): Promise<USBDevice> => {
 		(await navigator.usb.requestDevice({
 			filters: [
 				{
-					vendorId: KinectVendorId.MICROSOFT,
-					productId: KinectProductId.NUI_CAMERA,
+					vendorId: VendorId.MICROSOFT,
+					productId: ProductId.NUI_CAMERA,
 				},
 			],
 		}));
@@ -37,15 +34,16 @@ export const claimNuiMotor = async (d?: USBDevice): Promise<USBDevice> => {
 		(await navigator.usb.requestDevice({
 			filters: [
 				{
-					vendorId: KinectVendorId.MICROSOFT,
-					productId: KinectProductId.NUI_MOTOR,
+					vendorId: VendorId.MICROSOFT,
+					productId: ProductId.NUI_MOTOR,
 				},
 			],
 		}));
 	return dev;
 };
 
-export * from "./KinectMotor";
-export * from "./KinectCamera";
+export * from "./Motor";
+export * from "./Camera";
+export * from "./enum/index";
 export * from "./util/index";
 export * from "./stream/index";

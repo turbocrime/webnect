@@ -12,7 +12,7 @@ import {
 	CamIsoEndpoint,
 	CamIsoPacketFlag,
 	CamIsoPacketSize,
-} from "../CamEnums";
+} from "../enum/cam";
 import { CamIsoParser } from "../stream/CamIsoParser";
 import { UnderlyingIsochronousSource } from "../stream/UnderlyingIsochronousSource";
 

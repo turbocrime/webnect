@@ -5,7 +5,7 @@ import type {
 	CamIsoWorkerInitMsg,
 } from "./worker/CamIsoWorker";
 
-import type { CamMode, CamModeSet } from "./util/CamMode";
+import type { CamModeSet } from "./util/mode";
 
 import { CamStream, CamFrameDeveloper } from "./stream/CamStream";
 
@@ -14,26 +14,22 @@ import {
 	CamType,
 	CamUsbCommand,
 	CamIsoEndpoint,
-	ON,
 	OFF,
-} from "./CamEnums";
+} from "./enum/cam";
 
-import { parseModeOpts } from "./util/CamMode";
+import { parseModeOpts } from "./util/mode";
 
 import {
 	CamCommand,
 	CamCommandOut,
 	CamCommandIn,
 	CamCommandIO,
-} from "./stream/CamCommand";
-
-export * from "./CamEnums";
-export * from "./util/CamMode";
+} from "./CamCommand";
 
 const getDeviceIndex = (d: USBDevice) =>
 	navigator.usb.getDevices().then((ds) => ds.indexOf(d));
 
-export class KinectCamera {
+export class Camera {
 	dev: USBDevice;
 
 	_registers: Record<CamOption, number>;
