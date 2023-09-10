@@ -10,7 +10,7 @@ import {
 	CamIsoPacketSize,
 	OFF,
 	ON,
-} from "../enum/cam";
+} from "../enum";
 
 export type CamMode = {
 	stream: CamType;
@@ -22,55 +22,7 @@ export type CamMode = {
 
 export type CamModeSet = Record<CamIsoEndpoint, CamMode>;
 
-// TODO: throw invalid modes
-export const selectFrameSize = ({
-	stream,
-	format,
-	res,
-}: Pick<CamMode, "stream" | "format" | "res">) => {
-	const frameDimension = {
-		[CamRes.LOW]: 320 * 240,
-		[CamRes.MED]: 640 * 480,
-		[CamRes.HIGH]: 1280 * 1024,
-	};
-
-	const irFrameDimension = {
-		...frameDimension,
-		[CamRes.MED]: 640 * 488,
-		// TODO: other wierd ones?
-	};
-
-	const bitsPerPixel = {
-		[(CamType.VISIBLE << 4) | CamFmtVisible.BAYER_8B]: 8,
-		[(CamType.VISIBLE << 4) | CamFmtVisible.YUV_16B]: 16,
-		[(CamType.DEPTH << 4) | CamFmtDepth.D_10B]: 10,
-		[(CamType.DEPTH << 4) | CamFmtDepth.D_11B]: 11,
-		[(CamType.INFRARED << 4) | CamFmtInfrared.IR_10B]: 10,
-	};
-
-	switch (stream) {
-		case CamType.VISIBLE:
-			return (frameDimension[res] * bitsPerPixel[(stream << 4) | format]) / 8;
-		case CamType.DEPTH:
-			return (frameDimension[res] * bitsPerPixel[(stream << 4) | format]) / 8;
-		case CamType.INFRARED:
-			return (irFrameDimension[res] * bitsPerPixel[(stream << 4) | format]) / 8;
-		case CamType.NONE:
-			return 0;
-		default:
-			throw new TypeError("Invalid stream type");
-	}
-};
-
-export const selectPacketSize = (mode: CamMode) =>
-	mode.stream === CamType.DEPTH
-		? CamIsoPacketSize.DEPTH
-		: CamIsoPacketSize.VIDEO;
-
-export const selectPacketFlag = (mode: CamMode) =>
-	mode.stream === CamType.DEPTH
-		? CamIsoPacketFlag.DEPTH
-		: CamIsoPacketFlag.VIDEO;
+export const STREAM_OFF = { stream: CamType.NONE } as CamMode;
 
 const DEFAULT_MODE_VISIBLE = {
 	stream: CamType.VISIBLE,
@@ -96,9 +48,23 @@ const DEFAULT_MODE_DEPTH = {
 	fps: CamFps.F_30P,
 };
 
-export const STREAM_OFF = { stream: CamType.NONE } as CamMode;
+export const RESOLUTION = {
+	[CamRes.LOW]: [320, 240, 320 * 240],
+	[CamRes.MED]: [640, 480, 640 * 480],
+	[CamRes.HIGH]: [1280, 1024, 1280 * 1024],
+} as Record<CamRes, [number, number, number]>;
 
-export const modes = (
+export const selectPacketSize = (mode: CamMode) =>
+	mode.stream === CamType.DEPTH
+		? CamIsoPacketSize.DEPTH
+		: CamIsoPacketSize.VIDEO;
+
+export const selectPacketFlag = (mode: CamMode) =>
+	mode.stream === CamType.DEPTH
+		? CamIsoPacketFlag.DEPTH
+		: CamIsoPacketFlag.VIDEO;
+
+export const Mode = (
 	depthMode?: Partial<CamMode>,
 	videoMode?: Partial<CamMode>,
 ) =>
@@ -107,13 +73,16 @@ export const modes = (
 		[CamIsoEndpoint.VIDEO]: videoMode ?? STREAM_OFF,
 	}) as CamModeSet;
 
-export const DefaultModes = {
+export const DefaultMode = {
 	[CamType.VISIBLE]: DEFAULT_MODE_VISIBLE,
 	VISIBLE: DEFAULT_MODE_VISIBLE,
+
 	[CamType.INFRARED]: DEFAULT_MODE_INFRARED,
 	INFRARED: DEFAULT_MODE_INFRARED,
+
 	[CamType.DEPTH]: DEFAULT_MODE_DEPTH,
 	DEPTH: DEFAULT_MODE_DEPTH,
+
 	[CamType.NONE]: STREAM_OFF,
 	NONE: STREAM_OFF,
 	OFF: STREAM_OFF,
@@ -121,10 +90,10 @@ export const DefaultModes = {
 
 export const parseModeOpts = (
 	existing: CamModeSet,
-	useDefaults = false as typeof DefaultModes | boolean,
+	useDefaults = false as typeof DefaultMode | boolean,
 	modeOpt = {} as Record<CamIsoEndpoint, Partial<CamMode>>,
 ): Record<CamIsoEndpoint, CamMode> => {
-	const defaults = useDefaults === true ? DefaultModes : useDefaults;
+	const defaults = useDefaults === true ? DefaultMode : useDefaults;
 
 	const getUpdatedMode = (
 		endpoint: CamIsoEndpoint,

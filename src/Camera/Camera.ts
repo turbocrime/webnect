@@ -3,11 +3,13 @@ import type {
 	CamIsoWorkerActiveMsg,
 	CamIsoWorkerActiveReply,
 	CamIsoWorkerInitMsg,
-} from "./worker/CamIsoWorker";
+} from "../worker";
+import type { CamModeSet } from "./mode";
+import { parseModeOpts } from "./mode";
 
-import type { CamModeSet } from "./util/mode";
+import { CamStream, CamFrameDeveloper } from "../stream";
 
-import { CamStream, CamFrameDeveloper } from "./stream/CamStream";
+import { camIsoWorkerUrl } from "../worker";
 
 import {
 	CamOption,
@@ -15,16 +17,14 @@ import {
 	CamUsbCommand,
 	CamIsoEndpoint,
 	OFF,
-} from "./enum/cam";
-
-import { parseModeOpts } from "./util/mode";
+} from "../enum";
 
 import {
 	CamCommand,
 	CamCommandOut,
 	CamCommandIn,
 	CamCommandIO,
-} from "./CamCommand";
+} from "./command";
 
 const getDeviceIndex = (d: USBDevice) =>
 	navigator.usb.getDevices().then((ds) => ds.indexOf(d));
@@ -61,18 +61,15 @@ export class Camera {
 		this[CamIsoEndpoint.VIDEO] = new CamStream(deraw[0]);
 		this[CamIsoEndpoint.DEPTH] = new CamStream(deraw[1]);
 
-		this.usbWorker = new Worker(
-			new URL("./worker/CamIsoWorker.ts", import.meta.url),
-			{
-				name: "webnect",
-				type: "module",
-				credentials: "omit",
-			} as WorkerOptions,
-		);
+		const parsedMode = parseModeOpts({} as CamModeSet, true, cameraModes);
+
+		this.usbWorker = new Worker(camIsoWorkerUrl, {
+			name: "webnect iso worker",
+			type: "module",
+			credentials: "omit",
+		} as WorkerOptions);
 		this.ready = this.initWorker()
-			.then(() =>
-				this.setMode(parseModeOpts({} as CamModeSet, true, cameraModes)),
-			)
+			.then(() => this.setMode(parsedMode))
 			.then(() => this);
 	}
 
@@ -188,9 +185,7 @@ export class Camera {
 					this.writeRegister(CamOption.VISIBLE_RES, res);
 					this.writeRegister(CamOption.VISIBLE_FPS, fps);
 					this.writeRegister(CamOption.VISIBLE_FLIP, flip);
-					await this.writeRegister(CamOption.VIDEO_TYPE, stream).catch((e) =>
-						console.error("Caught", e),
-					);
+					await this.writeRegister(CamOption.VIDEO_TYPE, stream);
 					break;
 				}
 				case CamType.INFRARED: {
@@ -216,16 +211,17 @@ export class Camera {
 	}
 
 	async writeRegister(register: CamOption, value: number) {
-		console.log("WRITING", CamOption[register], value);
+		console.debug("writeRegister", CamOption[register], value);
 		const write = await this.command(
 			CamUsbCommand.WRITE_REGISTER,
-			new Uint16Array([register, value]),
+			new Uint16Array([register, value ?? 0]),
 		);
 		if (write && write.length === 1 && write[0] === 0) return write;
 		else throw Error(`bad write ${write}`);
 	}
 
 	async readRegister(register: number) {
+		console.debug("readRegister", CamOption[register]);
 		const read = await this.command(
 			CamUsbCommand.READ_REGISTER,
 			new Uint16Array([register]),

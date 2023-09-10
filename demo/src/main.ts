@@ -1,19 +1,14 @@
 import "./style.css";
 
-import {
-	claimNuiCamera,
-	claimNuiMotor,
-	ProductId,
-	Camera,
-	Motor,
-} from "@webnect/webnect";
+import webnect from "@webnect/webnect";
 
-import { unpackGray, DefaultModes, modes } from "@webnect/webnect/util";
+import { DefaultMode, Mode } from "@webnect/webnect";
+import { frame } from "@webnect/webnect/stream";
 
 const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
 	const rgbaFrame = rgba ?? new Uint8ClampedArray(640 * 480 * 4);
-	// frame is 11bit/u16gray, expand for canvas rgba
-	const grayFrame = unpackGray(11, raw);
+	// frame is 11bit packed gray, unpack to u16 gray
+	const grayFrame = frame.unpackGray(11, raw);
 
 	// moving color ramps
 	const colorMarch = window.performance.now() / 10;
@@ -96,10 +91,10 @@ async function setupDevice() {
 		} = { motor: false, camera: false, audio: false };
 		existingUsb.forEach((device) => {
 			switch (device.productId) {
-				case ProductId.NUI_MOTOR:
+				case webnect.ProductId.NUI_MOTOR:
 					devicesArg.motor = device;
 					break;
-				case ProductId.NUI_CAMERA:
+				case webnect.ProductId.NUI_CAMERA:
 					devicesArg.camera = device;
 					break;
 			}
@@ -115,10 +110,10 @@ document
 	.addEventListener("click", async () => {
 		const { motor, camera, audio } = {
 			motor: document.querySelector<HTMLInputElement>("#motorCb")!.checked
-				? await claimNuiMotor()
+				? await webnect.claimNuiMotor()
 				: undefined,
 			camera: document.querySelector<HTMLInputElement>("#cameraCb")!.checked
-				? await claimNuiCamera()
+				? await webnect.claimNuiCamera()
 				: undefined,
 			audio: document.querySelector<HTMLInputElement>("#audioCb")!.checked,
 		};
@@ -129,7 +124,7 @@ document
 
 function setupCameraDemo(cameraDevice: USBDevice) {
 	cameraDevice.open();
-	const camera = new Camera(cameraDevice);
+	const camera = new webnect.Camera(cameraDevice);
 	const cameraDemo =
 		document.querySelector<HTMLFieldSetElement>("#cameraDemo")!;
 	cameraDemo.hidden = false;
@@ -166,7 +161,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 	const videoFlipCb = document.querySelector<HTMLInputElement>("#flipCb")!;
 	videoFlipCb.addEventListener("change", async () => {
 		camera.setMode(
-			modes(
+			Mode(
 				{ flip: videoFlipCb.checked ? 1 : 0 },
 				{ flip: videoFlipCb.checked ? 1 : 0 },
 			),
@@ -203,12 +198,12 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			switch (videoModeOption.value) {
 				case "depth": {
 					await camera.setMode(
-						modes(
+						Mode(
 							{
-								...DefaultModes.DEPTH,
+								...DefaultMode.DEPTH,
 								flip: videoFlipCb.checked ? 1 : 0,
 							},
-							DefaultModes.OFF,
+							DefaultMode.OFF,
 						),
 					);
 
@@ -220,8 +215,8 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 				}
 				case "visible": {
 					await camera.setMode(
-						modes(DefaultModes.OFF, {
-							...DefaultModes.VISIBLE,
+						Mode(DefaultMode.OFF, {
+							...DefaultMode.VISIBLE,
 							flip: videoFlipCb.checked ? 1 : 0,
 						}),
 					);
@@ -230,8 +225,8 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 				}
 				case "ir": {
 					await camera.setMode(
-						modes(DefaultModes.OFF, {
-							...DefaultModes.INFRARED,
+						Mode(DefaultMode.OFF, {
+							...DefaultMode.INFRARED,
 							flip: videoFlipCb.checked ? 1 : 0,
 						}),
 					);
@@ -243,14 +238,16 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			}
 
 			reader = camStream.getReader();
-			console.log("got reader", reader);
 			const frameGenerator = async function* () {
-				while (true) {
-					const frame = await reader
-						.read()
-						.catch((e) => console.error("its ok lol", e));
-					if (!frame || frame.done) break;
-					yield frame.value;
+				try {
+					while (true) {
+						const frame = await reader.read();
+						if (frame.done) break;
+						yield frame.value;
+					}
+				} catch {
+				} finally {
+					if (camStream.locked) reader.releaseLock();
 				}
 			};
 			for await (const drawFrame of frameGenerator()) {
@@ -263,14 +260,12 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			cameraDemo.disabled = true;
 			cameraDemo.classList.add("disabled");
 			throw e;
-		} finally {
-			if (camStream.locked) reader.releaseLock();
 		}
 	};
 
 	const endStream = async () => {
 		if (camStream.locked) reader.releaseLock();
-		await camera.setMode(modes(DefaultModes.OFF, DefaultModes.OFF));
+		await camera.setMode(Mode(DefaultMode.OFF, DefaultMode.OFF));
 	};
 
 	runStream();
@@ -278,7 +273,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 function setupMotorDemo(motorDevice: USBDevice) {
 	motorDevice.open();
-	const motor = new Motor(motorDevice);
+	const motor = new webnect.Motor(motorDevice);
 	const motorDemo = document.querySelector<HTMLFieldSetElement>("#motorDemo")!;
 	motorDemo.hidden = false;
 	motorDemo.disabled = false;

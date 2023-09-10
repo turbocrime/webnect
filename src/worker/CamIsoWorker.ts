@@ -1,50 +1,20 @@
-import type { CamIsoPacket } from "../stream/CamIsoParser";
+declare const self: Worker;
+declare const navigator: Navigator & { usb: USB };
 
-declare const navigator: Navigator & {
-	usb: USB;
-};
+export const camIsoWorkerUrl = import.meta.url.toString();
 
-declare const self: Worker & {
-	postMessage: (msg: CamIsoWorkerReply, transfer?: Transferable[]) => void;
-};
+import type {
+	CamIsoWorkerActiveMsg,
+	CamIsoWorkerActiveReply,
+	CamIsoWorkerInitMsg,
+	CamIsoWorkerInitReply,
+	CamIsoWorkerMsg,
+	CamIsoWorkerOpts,
+} from ".";
 
-import {
-	CamIsoEndpoint,
-	CamIsoPacketFlag,
-	CamIsoPacketSize,
-} from "../enum/cam";
+import { CamIsoEndpoint, CamIsoPacketFlag, CamIsoPacketSize } from "../enum";
 import { CamIsoParser } from "../stream/CamIsoParser";
 import { UnderlyingIsochronousSource } from "../stream/UnderlyingIsochronousSource";
-
-export type CamIsoWorkerOpts = {
-	dev: number;
-	batchSize?: number;
-	devconf?: number;
-	iface?: number;
-	altiface?: number;
-};
-
-export type CamIsoWorkerInitMsg = {
-	type: "init";
-	config: CamIsoWorkerOpts;
-};
-
-export type CamIsoWorkerActiveMsg = {
-	type: "active";
-	depth: "stop" | "go";
-	video: "stop" | "go";
-};
-
-export type CamIsoWorkerMsg = CamIsoWorkerInitMsg | CamIsoWorkerActiveMsg;
-export type CamIsoWorkerReply = CamIsoWorkerInitReply | CamIsoWorkerActiveReply;
-
-export type CamIsoWorkerInitReply = {
-	type: "init";
-	depth: ReadableStream<CamIsoPacket>;
-	video: ReadableStream<CamIsoPacket>;
-};
-
-export type CamIsoWorkerActiveReply = CamIsoWorkerActiveMsg;
 
 const DEFAULT_USB_DEV = 0;
 const DEFAULT_USB_IFACE = 0;
@@ -59,10 +29,10 @@ const sources = {
 	[CamIsoEndpoint.DEPTH]: {} as UnderlyingIsochronousSource,
 	[CamIsoEndpoint.VIDEO]: {} as UnderlyingIsochronousSource,
 };
-
 self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 	switch (event.data?.type) {
 		case "init": {
+			event.data as CamIsoWorkerInitMsg;
 			await initUsb(event.data.config);
 			const depth = initStream("DEPTH");
 			const video = initStream("VIDEO");
@@ -73,6 +43,7 @@ self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 			break;
 		}
 		case "active": {
+			event.data as CamIsoWorkerActiveMsg;
 			const { depth, video } = event.data;
 			sources[CamIsoEndpoint.DEPTH].active(depth);
 			sources[CamIsoEndpoint.VIDEO].active(video);
@@ -132,3 +103,5 @@ const initStream = (streamType: "DEPTH" | "VIDEO") => {
 	);
 	return packetStream;
 };
+
+export {};

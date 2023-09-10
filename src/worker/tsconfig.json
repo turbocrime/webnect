@@ -1,8 +1,9 @@
 {
-    "compilerOptions": {
-        "lib": [
-            "webworker",
-            "es2022"
-        ]
-    }
+	"compilerOptions": {
+		"module": "es2022",
+		"target": "es2022",
+		"moduleResolution": "bundler",
+		"lib": ["es2022", "webworker"],
+		"types": ["w3c-web-usb"]
+	}
 }

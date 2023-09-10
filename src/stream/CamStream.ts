@@ -1,11 +1,9 @@
-import type { CamMode } from "../util/mode";
-import { selectFrameSize, STREAM_OFF } from "../util/mode";
-import { CamFrameAssembler } from "./CamFrameAssembler";
-import { CamIsoPacket } from "./CamIsoParser";
+import type { CamMode } from "../Camera/mode";
+import type { CamIsoPacket } from "./CamIsoParser";
 
-//import { CamCanvas } from "../util/CamCanvas";
-import { selectFnToRgba } from "../index";
-import { RESOLUTIONS } from "../index";
+import { STREAM_OFF } from "../Camera/mode";
+import { CamFrameAssembler } from "./CamFrameAssembler";
+import { CamFrameDeveloper } from "./CamFrameDeveloper";
 
 export class CamStream
 	implements TransformStream<CamIsoPacket, ArrayBuffer | ImageData>
@@ -30,7 +28,7 @@ export class CamStream
 		this._mode = STREAM_OFF as CamMode;
 		this.packetStream = packets;
 
-		this.frameAssembler = new CamFrameAssembler(selectFrameSize(this._mode));
+		this.frameAssembler = new CamFrameAssembler(this._mode);
 
 		if (deraw == null || deraw === true)
 			this.rawDeveloper = new CamFrameDeveloper(this._mode);
@@ -67,46 +65,7 @@ export class CamStream
 	set mode(mode: CamMode) {
 		// TODO: pause like UnderlyingIsochronousSource?
 		this._mode = mode;
-		this.frameAssembler.frameSize = selectFrameSize(mode);
+		this.frameAssembler.mode = mode;
 		if (this.rawDeveloper) this.rawDeveloper.mode = mode;
-	}
-}
-
-type ToRgba = (b: ArrayBuffer) => Uint8ClampedArray;
-export class CamFrameDeveloper implements Transformer<ArrayBuffer, ImageData> {
-	private _mode: CamMode;
-	private _customFn?: ToRgba;
-	private rawToRgba: ToRgba;
-
-	frameWidth: number;
-
-	constructor(mode: CamMode, customFn?: (r: ArrayBuffer) => Uint8ClampedArray) {
-		this._mode = mode;
-		this._customFn = customFn;
-		this.rawToRgba = customFn ?? selectFnToRgba(mode)!;
-		this.frameWidth = (RESOLUTIONS[mode.res] ?? [640, 480])[0];
-	}
-
-	get mode() {
-		return this._mode;
-	}
-
-	set mode(newMode: CamMode) {
-		this._mode = newMode;
-		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
-		this.frameWidth = (RESOLUTIONS[newMode.res] ?? [640, 480])[0];
-	}
-
-	set customFn(newCustomFn: ToRgba) {
-		this._customFn = newCustomFn;
-		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
-	}
-
-	get customFn(): ToRgba | undefined {
-		return this._customFn;
-	}
-
-	transform(raw: ArrayBuffer, c: TransformStreamDefaultController<ImageData>) {
-		c.enqueue(new ImageData(this.rawToRgba(raw), this.frameWidth));
 	}
 }

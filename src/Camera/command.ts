@@ -1,4 +1,4 @@
-import { CamUsbCommand, CamUsbControl, CamMagic } from "./enum/cam";
+import { CamUsbCommand, CamUsbControl, CamMagic } from "../enum";
 
 const CMD_HEADER_SIZE = 8; // bytes
 const RESPONSE_TIMEOUT_MS = 200;
@@ -18,7 +18,7 @@ export class CamCommand extends Uint16Array {
 
 	private _response?: Promise<CamCommandIn>;
 	private resolve?: (value: CamCommandIn) => void;
-	// rome-ignore lint/suspicious/noExplicitAny: reject for any reason
+	// biome-ignore lint/suspicious/noExplicitAny: reject for any reason
 	private reject?: (reason?: any) => void;
 
 	get magic() {
@@ -61,6 +61,7 @@ export class CamCommand extends Uint16Array {
 				? cmdBufferOrOpts.slice(
 						0,
 						CMD_HEADER_SIZE +
+							// TODO: validate size before yeet
 							new DataView(cmdBufferOrOpts).getUint16(2, true) * 2,
 				  )
 				: new ArrayBuffer(CMD_HEADER_SIZE + cmdBufferOrOpts.content.byteLength);
@@ -121,7 +122,7 @@ export class CamCommandIO {
 			if (usbResult.status !== "ok")
 				return console.warn("Command response bad", usbResult);
 			if (!usbResult.data?.byteLength)
-				return console.warn("Command response empty");
+				return console.debug("Command response empty");
 
 			let multiResponse = 0;
 			do {

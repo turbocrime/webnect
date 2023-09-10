@@ -1,4 +1,4 @@
-import { MotorUsbControl, MotorLed, MotorServoState } from "./enum/motor";
+import { MotorUsbControl, MotorLed, MotorServoState } from "../enum";
 
 export type MotorState = {
 	angle?: number; // raw, half-degrees
