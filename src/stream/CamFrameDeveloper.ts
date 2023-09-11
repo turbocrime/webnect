@@ -1,13 +1,14 @@
-import type { CamMode } from "../Camera";
+import type { CamMode } from "Camera";
+
 import {
 	CamType,
 	CamFmtDepth,
 	CamFmtInfrared,
 	CamFmtVisible,
 	RESOLUTION,
-} from "../Camera";
+} from "Camera";
 
-import fmt from "./frame";
+import fmt from "./format";
 
 type ToRgba = (b: ArrayBuffer) => Uint8ClampedArray;
 

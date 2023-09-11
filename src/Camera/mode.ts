@@ -6,11 +6,7 @@ import {
 	CamRes,
 	CamType,
 	CamIsoEndpoint,
-	CamIsoPacketFlag,
-	CamIsoPacketSize,
-	OFF,
-	ON,
-} from "../enum";
+} from "./enum";
 
 export type CamMode = {
 	stream: CamType;
@@ -22,7 +18,7 @@ export type CamMode = {
 
 export type CamModeSet = Record<CamIsoEndpoint, CamMode>;
 
-export const STREAM_OFF = { stream: CamType.NONE } as CamMode;
+export const MODE_OFF = { stream: CamType.NONE } as CamMode;
 
 const DEFAULT_MODE_VISIBLE = {
 	stream: CamType.VISIBLE,
@@ -54,23 +50,13 @@ export const RESOLUTION = {
 	[CamRes.HIGH]: [1280, 1024, 1280 * 1024],
 } as Record<CamRes, [number, number, number]>;
 
-export const selectPacketSize = (mode: CamMode) =>
-	mode.stream === CamType.DEPTH
-		? CamIsoPacketSize.DEPTH
-		: CamIsoPacketSize.VIDEO;
-
-export const selectPacketFlag = (mode: CamMode) =>
-	mode.stream === CamType.DEPTH
-		? CamIsoPacketFlag.DEPTH
-		: CamIsoPacketFlag.VIDEO;
-
-export const Mode = (
-	depthMode?: Partial<CamMode>,
-	videoMode?: Partial<CamMode>,
+export const mode = (
+	depthMode?: false | Partial<CamMode>,
+	videoMode?: false | Partial<CamMode>,
 ) =>
 	({
-		[CamIsoEndpoint.DEPTH]: depthMode ?? STREAM_OFF,
-		[CamIsoEndpoint.VIDEO]: videoMode ?? STREAM_OFF,
+		[CamIsoEndpoint.DEPTH]: depthMode || MODE_OFF,
+		[CamIsoEndpoint.VIDEO]: videoMode || MODE_OFF,
 	}) as CamModeSet;
 
 export const DefaultMode = {
@@ -83,9 +69,9 @@ export const DefaultMode = {
 	[CamType.DEPTH]: DEFAULT_MODE_DEPTH,
 	DEPTH: DEFAULT_MODE_DEPTH,
 
-	[CamType.NONE]: STREAM_OFF,
-	NONE: STREAM_OFF,
-	OFF: STREAM_OFF,
+	[CamType.NONE]: MODE_OFF,
+	NONE: MODE_OFF,
+	OFF: MODE_OFF,
 };
 
 export const parseModeOpts = (

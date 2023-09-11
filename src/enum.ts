@@ -1,2 +1,2 @@
-export * from "./Camera/enum";
-export * from "./Motor/enum";
+export * from "Camera/enum";
+export * from "Motor/enum";

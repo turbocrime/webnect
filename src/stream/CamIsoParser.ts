@@ -1,5 +1,5 @@
-import { CamIsoPacketFlag, CamMagic } from "../enum";
 import type { SerializedUSBIsochronousInTransferResult } from "./UnderlyingIsochronousSource";
+import { CamIsoPacketFlag, CamMagic } from "Camera/enum";
 
 export type CamIsoPacket = {
 	stream: CamIsoPacketFlag;

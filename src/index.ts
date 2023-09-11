@@ -1,17 +1,17 @@
-const usbSupport = typeof navigator?.usb?.getDevices === "function";
+export const usbSupport = typeof navigator?.usb?.getDevices === "function";
 if (!usbSupport) console.error("WebUSB supported not detected!");
 
-enum VendorId {
+export enum VendorId {
 	MICROSOFT = 0x045e,
 }
 
-enum ProductId {
+export enum ProductId {
 	NUI_MOTOR = 0x02b0,
 	NUI_CAMERA = 0x02ae,
 	NUI_AUDIO = 0x02ad,
 }
 
-const claimNuiCamera = async (d?: USBDevice): Promise<USBDevice> => {
+export const claimNuiCamera = async (d?: USBDevice): Promise<USBDevice> => {
 	const dev =
 		d ||
 		(await navigator.usb.requestDevice({
@@ -28,7 +28,7 @@ const claimNuiCamera = async (d?: USBDevice): Promise<USBDevice> => {
 	return dev;
 };
 
-const claimNuiMotor = async (d?: USBDevice): Promise<USBDevice> => {
+export const claimNuiMotor = async (d?: USBDevice): Promise<USBDevice> => {
 	const dev =
 		d ||
 		(await navigator.usb.requestDevice({
@@ -42,20 +42,22 @@ const claimNuiMotor = async (d?: USBDevice): Promise<USBDevice> => {
 	return dev;
 };
 
-import Motor from "./Motor";
-import Camera from "./Camera";
-import { Mode, DefaultMode } from "./Camera";
+export * from "Camera";
+export * from "Motor";
+
+import Motor from "Motor";
+import Camera from "Camera";
+import { DefaultMode } from "Camera/mode";
+import { format } from "stream";
 
 export default {
+	usbSupport,
 	ProductId,
 	VendorId,
 	claimNuiCamera,
 	claimNuiMotor,
 	Camera,
 	Motor,
-	Mode,
 	DefaultMode,
+	format,
 };
-
-export * from "./Camera";
-export * from "./Motor";

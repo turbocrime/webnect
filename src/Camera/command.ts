@@ -1,4 +1,4 @@
-import { CamUsbCommand, CamUsbControl, CamMagic } from "../enum";
+import { CamUsbCommand, CamUsbControl, CamMagic } from "Camera/enum";
 
 const CMD_HEADER_SIZE = 8; // bytes
 const RESPONSE_TIMEOUT_MS = 200;

@@ -1,5 +1,5 @@
-import type { CamIsoPacket } from "./CamIsoParser";
-import type { CamMode } from "../Camera/mode";
+import type { CamIsoPacket } from ".";
+import type { CamMode } from "Camera";
 
 import {
 	CamRes,
@@ -7,7 +7,7 @@ import {
 	CamFmtVisible,
 	CamFmtDepth,
 	CamFmtInfrared,
-} from "../enum";
+} from "Camera/enum";
 
 // TODO: throw invalid modes
 export const selectFrameSize = ({

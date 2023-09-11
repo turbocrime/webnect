@@ -1,8 +1,3 @@
-export type OFF = 0;
-export const OFF = 0 as OFF;
-export type ON = 1;
-export const ON = 1 as ON;
-
 export enum CamMagic {
 	COMMAND_OUT = 0x4d47,
 	COMMAND_IN = 0x4252,
