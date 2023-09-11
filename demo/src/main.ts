@@ -1,14 +1,11 @@
 import "./style.css";
 
-import webnect from "@webnect/webnect";
-
-import { DefaultMode, Mode } from "@webnect/webnect";
-import { frame } from "@webnect/webnect/stream";
+import k from "@webnect/webnect";
 
 const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
 	const rgbaFrame = rgba ?? new Uint8ClampedArray(640 * 480 * 4);
 	// frame is 11bit packed gray, unpack to u16 gray
-	const grayFrame = frame.unpackGray(11, raw);
+	const grayFrame = k.format.unpackGray(11, raw);
 
 	// moving color ramps
 	const colorMarch = window.performance.now() / 10;
@@ -91,10 +88,10 @@ async function setupDevice() {
 		} = { motor: false, camera: false, audio: false };
 		existingUsb.forEach((device) => {
 			switch (device.productId) {
-				case webnect.ProductId.NUI_MOTOR:
+				case k.ProductId.NUI_MOTOR:
 					devicesArg.motor = device;
 					break;
-				case webnect.ProductId.NUI_CAMERA:
+				case k.ProductId.NUI_CAMERA:
 					devicesArg.camera = device;
 					break;
 			}
@@ -110,10 +107,10 @@ document
 	.addEventListener("click", async () => {
 		const { motor, camera, audio } = {
 			motor: document.querySelector<HTMLInputElement>("#motorCb")!.checked
-				? await webnect.claimNuiMotor()
+				? await k.claimNuiMotor()
 				: undefined,
 			camera: document.querySelector<HTMLInputElement>("#cameraCb")!.checked
-				? await webnect.claimNuiCamera()
+				? await k.claimNuiCamera()
 				: undefined,
 			audio: document.querySelector<HTMLInputElement>("#audioCb")!.checked,
 		};
@@ -124,7 +121,7 @@ document
 
 function setupCameraDemo(cameraDevice: USBDevice) {
 	cameraDevice.open();
-	const camera = new webnect.Camera(cameraDevice);
+	const camera = new k.Camera(cameraDevice);
 	const cameraDemo =
 		document.querySelector<HTMLFieldSetElement>("#cameraDemo")!;
 	cameraDemo.hidden = false;
@@ -160,11 +157,9 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 	const videoFlipCb = document.querySelector<HTMLInputElement>("#flipCb")!;
 	videoFlipCb.addEventListener("change", async () => {
-		camera.setMode(
-			Mode(
-				{ flip: videoFlipCb.checked ? 1 : 0 },
-				{ flip: videoFlipCb.checked ? 1 : 0 },
-			),
+		camera.mode(
+			{ flip: videoFlipCb.checked ? 1 : 0 },
+			{ flip: videoFlipCb.checked ? 1 : 0 },
 		);
 	});
 
@@ -197,14 +192,12 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			await camera.ready;
 			switch (videoModeOption.value) {
 				case "depth": {
-					await camera.setMode(
-						Mode(
-							{
-								...DefaultMode.DEPTH,
-								flip: videoFlipCb.checked ? 1 : 0,
-							},
-							DefaultMode.OFF,
-						),
+					await camera.mode(
+						{
+							...k.Modes.DEPTH,
+							flip: videoFlipCb.checked ? 1 : 0,
+						},
+						k.Modes.OFF,
 					);
 
 					if (camera.depth.rawDeveloper)
@@ -214,22 +207,18 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 					break;
 				}
 				case "visible": {
-					await camera.setMode(
-						Mode(DefaultMode.OFF, {
-							...DefaultMode.VISIBLE,
-							flip: videoFlipCb.checked ? 1 : 0,
-						}),
-					);
+					await camera.mode(k.Modes.OFF, {
+						...k.Modes.VISIBLE,
+						flip: videoFlipCb.checked ? 1 : 0,
+					});
 					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
 				}
 				case "ir": {
-					await camera.setMode(
-						Mode(DefaultMode.OFF, {
-							...DefaultMode.INFRARED,
-							flip: videoFlipCb.checked ? 1 : 0,
-						}),
-					);
+					await camera.mode(k.Modes.OFF, {
+						...k.Modes.INFRARED,
+						flip: videoFlipCb.checked ? 1 : 0,
+					});
 					camStream = camera.video.readable as ReadableStream<ImageData>;
 					break;
 				}
@@ -248,6 +237,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 				} catch {
 				} finally {
 					if (camStream.locked) reader.releaseLock();
+					console.log("AM I DONE");
 				}
 			};
 			for await (const drawFrame of frameGenerator()) {
@@ -265,7 +255,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 	const endStream = async () => {
 		if (camStream.locked) reader.releaseLock();
-		await camera.setMode(Mode(DefaultMode.OFF, DefaultMode.OFF));
+		await camera.mode(k.Modes.OFF, k.Modes.OFF);
 	};
 
 	runStream();
@@ -273,7 +263,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 function setupMotorDemo(motorDevice: USBDevice) {
 	motorDevice.open();
-	const motor = new webnect.Motor(motorDevice);
+	const motor = new k.Motor(motorDevice);
 	const motorDemo = document.querySelector<HTMLFieldSetElement>("#motorDemo")!;
 	motorDemo.hidden = false;
 	motorDemo.disabled = false;

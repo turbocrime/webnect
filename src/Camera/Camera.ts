@@ -1,35 +1,29 @@
-import type {
-	CamIsoWorkerActiveMsg,
-	CamIsoWorkerInitMsg,
-	CamIsoWorkerMsg,
-	CamIsoWorkerReply,
-} from "worker";
-
 import type { CamMode, CamModeSet } from "./mode";
 import type { CamCommandOut } from "./command";
 
-import { CamOption, CamType, CamUsbCommand, CamIsoEndpoint } from "Camera/enum";
+import { CamOption, CamType, CamUsbCommand } from "./enum";
 
-import { camIsoWorkerUrl } from "worker";
+import { camIsoWorkerUrl } from "../worker";
 
-import { parseModeOpts, mode } from "./mode";
+import { parseModeOpts, Modes } from "./mode";
 import { CamCommand, CamCommandIO } from "./command";
-import { CamStream, CamFrameDeveloper } from "stream";
+import { CamStream, CamFrameDeveloper } from "../stream";
+import { CamIsoEndpoint } from "../stream/enum";
 
 const getDeviceIndex = (d: USBDevice) =>
 	navigator.usb.getDevices().then((ds) => ds.indexOf(d));
 
 const WORKER_TIMEOUT_MS = 1000;
 
-const Depth = CamIsoEndpoint.DEPTH;
 const Video = CamIsoEndpoint.VIDEO;
+const Depth = CamIsoEndpoint.DEPTH;
 
 export default class Camera {
 	public async mode(
 		depthMode?: false | Partial<CamMode>,
 		videoMode?: false | Partial<CamMode>,
 	) {
-		return this.setMode(mode(depthMode, videoMode));
+		return this.setMode(Modes(depthMode ?? false, videoMode ?? false));
 	}
 
 	public get depth() {
@@ -44,10 +38,7 @@ export default class Camera {
 		return this._registers;
 	}
 
-	public async register(
-		addr: CamOption,
-		value?: number | boolean,
-	): Promise<Uint16Array> {
+	public async register(addr: CamOption, value?: number): Promise<Uint16Array> {
 		return value == null
 			? this.readRegister(addr)
 			: this.writeRegister(addr, value);
@@ -131,8 +122,8 @@ export default class Camera {
 	private async activeWorker(setBoth?: ON | OFF) {
 		const activeMsg = {
 			type: "active",
-			video: setBoth ?? this[Video].mode.stream ? ON : OFF,
-			depth: setBoth ?? this[Depth].mode.stream ? ON : OFF,
+			video: setBoth ?? this[Video].mode.stream ? 1 : 0,
+			depth: setBoth ?? this[Depth].mode.stream ? 1 : 0,
 		} as CamIsoWorkerActiveMsg;
 
 		const activeReply = await this.workerReply(activeMsg);
@@ -178,7 +169,7 @@ export default class Camera {
 			modeOpt,
 		);
 
-		await this.activeWorker(OFF);
+		await this.activeWorker(0 as OFF);
 		this[Video].mode = modes[Video];
 		this[Depth].mode = modes[Depth];
 		await this.writeModeRegisters();
@@ -190,12 +181,12 @@ export default class Camera {
 		const v = this[Video].mode;
 
 		await Promise.all([
-			this.writeRegister(CamOption.DEPTH_TYPE, OFF),
-			this.writeRegister(CamOption.VIDEO_TYPE, OFF),
+			this.writeRegister(CamOption.DEPTH_TYPE, 0 as OFF),
+			this.writeRegister(CamOption.VIDEO_TYPE, 0 as OFF),
 		]);
 
 		if (d.stream) {
-			this.writeRegister(CamOption.PROJECTOR_CYCLE, OFF);
+			this.writeRegister(CamOption.PROJECTOR_CYCLE, 0 as OFF);
 			this.writeRegister(CamOption.DEPTH_FMT, d.format);
 			this.writeRegister(CamOption.DEPTH_RES, d.res);
 			this.writeRegister(CamOption.DEPTH_FPS, d.fps);
@@ -210,7 +201,7 @@ export default class Camera {
 		}
 
 		if (v.stream === CamType.INFRARED) {
-			this.writeRegister(CamOption.PROJECTOR_CYCLE, OFF);
+			this.writeRegister(CamOption.PROJECTOR_CYCLE, 0 as OFF);
 			this.writeRegister(CamOption.INFRARED_FMT, v.format);
 			this.writeRegister(CamOption.INFRARED_RES, v.res);
 			this.writeRegister(CamOption.INFRARED_FPS, v.fps);
@@ -223,13 +214,15 @@ export default class Camera {
 		]);
 	}
 
-	private async writeRegister(addr: CamOption, value: number | boolean) {
+	private async writeRegister(addr: CamOption, value: number) {
+		console.log("WRITING", CamOption[addr], value);
 		const write = await this.command(
 			CamUsbCommand.WRITE_REGISTER,
-			new Uint16Array([addr, value as number]),
+			new Uint16Array([addr, value]),
 		);
 		if (write && write.length === 1 && write[0] === 0) {
-			this._registers[addr] = value as number;
+			this._registers[addr] = value;
+			console.log("WRITE", CamOption[addr], "OK", this.registers);
 			return write;
 		} else throw Error(`bad write ${write}`);
 	}

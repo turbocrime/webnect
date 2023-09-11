@@ -1,7 +1,7 @@
-import { CamUsbCommand, CamUsbControl, CamMagic } from "Camera/enum";
+import { CamUsbCommand, CamUsbControl, CamMagic } from "./enum";
 
 const CMD_HEADER_SIZE = 8; // bytes
-const RESPONSE_TIMEOUT_MS = 200;
+const RESPONSE_TIMEOUT_MS = 300;
 const RESPONSE_RETRY_MS = 15;
 
 export type CamCommandOut = CamCommand & {
@@ -119,13 +119,14 @@ export class CamCommandIO {
 		);
 
 		await transfer.then((usbResult) => {
-			if (usbResult.status !== "ok")
-				return console.warn("Command response bad", usbResult);
+			if (usbResult.status !== "ok") throw usbResult;
 			if (!usbResult.data?.byteLength)
 				return console.debug("Command response empty");
 
 			let multiResponse = 0;
 			do {
+				if (multiResponse > 0)
+					console.debug("Command response continues", multiResponse);
 				const res = new CamCommand(
 					usbResult.data.buffer.slice(multiResponse),
 				) as CamCommandIn;
@@ -157,8 +158,7 @@ export class CamCommandIO {
 			cmd.buffer,
 		);
 
-		if (usbResult.status !== "ok")
-			throw new Error(`Command failed ${usbResult}`);
+		if (usbResult.status !== "ok") throw usbResult;
 
 		if (!this.listening) this.pullResponse();
 

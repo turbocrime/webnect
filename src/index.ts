@@ -42,13 +42,10 @@ export const claimNuiMotor = async (d?: USBDevice): Promise<USBDevice> => {
 	return dev;
 };
 
-export * from "Camera";
-export * from "Motor";
-
-import Motor from "Motor";
-import Camera from "Camera";
-import { DefaultMode } from "Camera/mode";
-import { format } from "stream";
+import Motor from "./Motor";
+import Camera from "./Camera";
+import Modes from "./Camera/mode";
+import format from "./stream/format";
 
 export default {
 	usbSupport,
@@ -58,6 +55,10 @@ export default {
 	claimNuiMotor,
 	Camera,
 	Motor,
-	DefaultMode,
+	Modes,
 	format,
 };
+
+export { Motor, Camera, Modes, format };
+export * from "./Camera";
+export * from "./Motor";

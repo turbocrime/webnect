@@ -1,7 +1,6 @@
 import type { CamMode } from "../Camera/mode";
-import type { CamIsoPacket } from "./CamIsoParser";
 
-import { STREAM_OFF } from "../Camera/mode";
+import { MODE_OFF } from "../Camera/mode";
 import { CamFrameAssembler } from "./CamFrameAssembler";
 import { CamFrameDeveloper } from "./CamFrameDeveloper";
 
@@ -22,16 +21,15 @@ export class CamStream
 
 	constructor(
 		//mode: CamMode,
-		deraw?: CamFrameDeveloper | boolean,
+		deraw = true as CamFrameDeveloper | boolean,
 		packets?: ReadableStream<CamIsoPacket>,
 	) {
-		this._mode = STREAM_OFF as CamMode;
+		this._mode = MODE_OFF as CamMode;
 		this.packetStream = packets;
 
 		this.frameAssembler = new CamFrameAssembler(this._mode);
 
-		if (deraw == null || deraw === true)
-			this.rawDeveloper = new CamFrameDeveloper(this._mode);
+		if (deraw === true) this.rawDeveloper = new CamFrameDeveloper(this._mode);
 		else if (deraw) this.rawDeveloper = deraw;
 
 		const { readable: rawStream, writable: packetSink } = new TransformStream(
@@ -62,10 +60,11 @@ export class CamStream
 		return this._mode;
 	}
 
-	set mode(mode: CamMode) {
+	set mode(m: CamMode) {
 		// TODO: pause like UnderlyingIsochronousSource?
-		this._mode = mode;
-		this.frameAssembler.mode = mode;
-		if (this.rawDeveloper) this.rawDeveloper.mode = mode;
+		console.log("setting mode", m);
+		this._mode = m;
+		this.frameAssembler.mode = m;
+		if (this.rawDeveloper) this.rawDeveloper.mode = m;
 	}
 }

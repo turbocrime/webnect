@@ -1,5 +1,4 @@
-import type { CamIsoPacket } from ".";
-import type { CamMode } from "Camera";
+import type { CamMode } from "../Camera/mode";
 
 import {
 	CamRes,
@@ -7,7 +6,7 @@ import {
 	CamFmtVisible,
 	CamFmtDepth,
 	CamFmtInfrared,
-} from "Camera/enum";
+} from "../Camera/enum";
 
 // TODO: throw invalid modes
 export const selectFrameSize = ({
@@ -95,10 +94,11 @@ export class CamFrameAssembler implements Transformer<CamIsoPacket, ArrayBuffer>
 	}
 
 	//set frameSize(frameSize: number) {
-	set mode(mode: CamMode) {
-		this._mode = mode;
-		this.frameSize = selectFrameSize(mode);
+	set mode(m: CamMode) {
+		this._mode = m;
+		this.frameSize = selectFrameSize(m);
 		this.frame = new Uint8Array(this.frameSize);
+		console.log("new framesize", this.frameSize);
 		this.desync("frame resize");
 	}
 

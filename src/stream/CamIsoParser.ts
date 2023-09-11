@@ -1,21 +1,5 @@
-import type { SerializedUSBIsochronousInTransferResult } from "./UnderlyingIsochronousSource";
-import { CamIsoPacketFlag, CamMagic } from "Camera/enum";
-
-export type CamIsoPacket = {
-	stream: CamIsoPacketFlag;
-	startFrame: boolean;
-	endFrame: boolean;
-	loss: number;
-	header: CamIsoPacketHeader;
-	body: ArrayBuffer;
-};
-
-type CamIsoPacketHeader = {
-	pType: number;
-	pSeq: number;
-	pSize: number;
-	pTime: number;
-};
+import { CamMagic } from "../Camera/enum";
+import { CamIsoPacketFlag } from "./enum";
 
 const PKT_HEADER_SIZE = 12;
 

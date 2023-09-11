@@ -1,21 +1,27 @@
-import type { CamMode } from "Camera";
+import type { CamMode } from "../Camera/mode";
 
 import {
 	CamType,
 	CamFmtDepth,
 	CamFmtInfrared,
 	CamFmtVisible,
-	RESOLUTION,
-} from "Camera";
+	CamRes,
+} from "../Camera/enum";
 
 import fmt from "./format";
 
 type ToRgba = (b: ArrayBuffer) => Uint8ClampedArray;
 
+const res = {
+	[CamRes.LOW]: [320, 240],
+	[CamRes.MED]: [640, 480],
+	[CamRes.HIGH]: [1280, 1024],
+} as Record<CamRes, [number, number]>;
+
 export const selectFnToRgba = (
 	mode: CamMode,
 ): ((f: ArrayBuffer) => Uint8ClampedArray) => {
-	const [width, height] = RESOLUTION[mode.res] ?? [640, 480];
+	const [width, height] = res[mode.res] ?? [640, 480];
 	switch (mode.stream) {
 		case CamType.VISIBLE:
 			if (mode.format === CamFmtVisible.BAYER_8B)
@@ -51,7 +57,7 @@ export class CamFrameDeveloper implements Transformer<ArrayBuffer, ImageData> {
 		this._mode = mode;
 		this._customFn = customFn;
 		this.rawToRgba = customFn ?? selectFnToRgba(mode)!;
-		this.frameWidth = (RESOLUTION[mode.res] ?? [640, 480])[0];
+		this.frameWidth = (res[mode.res] ?? [640, 480])[0];
 	}
 
 	get mode() {
@@ -61,7 +67,7 @@ export class CamFrameDeveloper implements Transformer<ArrayBuffer, ImageData> {
 	set mode(newMode: CamMode) {
 		this._mode = newMode;
 		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
-		this.frameWidth = (RESOLUTION[newMode.res] ?? [640, 480])[0];
+		this.frameWidth = (res[newMode.res] ?? [640, 480])[0];
 	}
 
 	set customFn(newCustomFn: ToRgba) {

@@ -3,18 +3,12 @@ declare const navigator: Navigator & { usb: USB };
 
 export const camIsoWorkerUrl = import.meta.url.toString();
 
-import type {
-	CamIsoWorkerActiveMsg,
-	CamIsoWorkerActiveReply,
-	CamIsoWorkerInitMsg,
-	CamIsoWorkerInitReply,
-	CamIsoWorkerMsg,
-	CamIsoWorkerOpts,
-} from ".";
-
-import { CamIsoEndpoint, CamIsoPacketFlag, CamIsoPacketSize } from "../enum";
-import { CamIsoParser } from "../stream/CamIsoParser";
-import { UnderlyingIsochronousSource } from "../stream/UnderlyingIsochronousSource";
+import { CamIsoParser, UnderlyingIsochronousSource } from "../stream";
+import {
+	CamIsoEndpoint,
+	CamIsoPacketFlag,
+	CamIsoPacketSize,
+} from "../stream/enum";
 
 const DEFAULT_USB_DEV = 0;
 const DEFAULT_USB_IFACE = 0;
@@ -25,9 +19,12 @@ let iface: USBInterface;
 //let altiface: USBAlternateInterface;
 let batchSize: number | undefined;
 
+const Video = CamIsoEndpoint.VIDEO;
+const Depth = CamIsoEndpoint.DEPTH;
+
 const sources = {
-	[CamIsoEndpoint.DEPTH]: {} as UnderlyingIsochronousSource,
-	[CamIsoEndpoint.VIDEO]: {} as UnderlyingIsochronousSource,
+	[Depth]: {} as UnderlyingIsochronousSource,
+	[Video]: {} as UnderlyingIsochronousSource,
 };
 self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 	switch (event.data?.type) {
@@ -45,8 +42,8 @@ self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 		case "active": {
 			event.data as CamIsoWorkerActiveMsg;
 			const { depth, video } = event.data;
-			sources[CamIsoEndpoint.DEPTH].active(depth);
-			sources[CamIsoEndpoint.VIDEO].active(video);
+			sources[Depth].paused = !depth;
+			sources[Video].paused = !video;
 			self.postMessage({
 				type: "active",
 				depth,
@@ -70,16 +67,16 @@ const initUsb = async (opt: CamIsoWorkerOpts) => {
 
 	await dev.open();
 
-	if (opt.devconf != null) await dev.selectConfiguration(opt.devconf);
+	//if (opt.devconf != null) await dev.selectConfiguration(opt.devconf);
 	//devconf = dev.configuration!;
 
 	iface = dev.configuration?.interfaces.find(
 		({ interfaceNumber }) => interfaceNumber === opt.iface,
 	)!;
 	await dev.claimInterface(iface.interfaceNumber);
+	console.log("dev", dev);
 
-	if (opt.altiface != null)
-		await dev.selectAlternateInterface(iface.interfaceNumber, opt.altiface);
+	//if (opt.altiface != null) await dev.selectAlternateInterface(iface.interfaceNumber, opt.altiface);
 	//altiface = iface.alternate;
 
 	batchSize = opt.batchSize;
@@ -101,7 +98,6 @@ const initStream = (streamType: "DEPTH" | "VIDEO") => {
 			),
 		),
 	);
+	console.log("init stream", source, packetStream);
 	return packetStream;
 };
-
-export {};
