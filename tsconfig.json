@@ -2,14 +2,16 @@
 	"compilerOptions": {
 		"module": "es2022",
 		"target": "es2022",
+		"moduleResolution": "bundler",
 		"strict": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"outDir": "dist",
-		"declaration": true
+		"declaration": true,
+		"baseUrl": "src"
 	},
 	"include": [
-		"src"
+		"src/**/*.ts"
 	],
 	"rootDirs": [
 		"src"

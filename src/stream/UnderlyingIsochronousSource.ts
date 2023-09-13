@@ -1,16 +1,8 @@
+import type { SerializedUSBIsochronousInTransferResult } from "./isochronousTypes";
+
 const DEFAULT_BATCH_SIZE = 256;
 const DEFAULT_PULL_RATE_LIMIT = 5;
 const DEFAULT_MAX_PENDING_TRANSFERS = 2;
-
-export type SerializedUSBIsochronousInTransferResult = {
-	readonly serialized: true;
-	readonly data: ArrayBuffer;
-	readonly packets: {
-		readonly byteOffset: number;
-		readonly byteLength: number;
-		readonly status: USBTransferStatus;
-	}[];
-};
 
 export const serializeIso = (
 	r: USBIsochronousInTransferResult,
@@ -42,8 +34,9 @@ export class UnderlyingIsochronousSource
 	maxPendingTransfers: number;
 	pullRateLimit: number;
 
-	paused: Promise<void> | false = false;
-	unpause = () => {};
+	_paused: boolean;
+
+	private cont?: ReadableStreamDefaultController;
 
 	constructor(
 		device: USBDevice,
@@ -51,6 +44,7 @@ export class UnderlyingIsochronousSource
 		packetSize: number,
 		extraOpts?: UnderlyingIsochronousSourceOptions,
 	) {
+		this._paused = true;
 		this.pendingTransfers = 0;
 
 		this.device = device;
@@ -69,39 +63,36 @@ export class UnderlyingIsochronousSource
 	}
 
 	start(cont: ReadableStreamDefaultController) {
-		Array(this.maxPendingTransfers).forEach(() => this.pull(cont));
+		this.cont = cont;
 	}
 
 	pull(cont: ReadableStreamDefaultController) {
-		if (this.paused) return this.paused;
-		if (this.pendingTransfers < this.maxPendingTransfers) {
+		if (!this.paused && this.pendingTransfers < this.maxPendingTransfers) {
 			this.pendingTransfers++;
 			this.device
 				.isochronousTransferIn(
 					this.endpointNumber,
 					Array(this.batchSize).fill(this.packetSize),
 				)
-				.then((r) => cont.enqueue(serializeIso(r)))
+				.then((r) => {
+					cont.enqueue(serializeIso(r));
+				})
 				.catch((e) => cont.error(e))
 				.finally(() => this.pendingTransfers--);
 		}
-		// TODO: rate limit necessary?
+		// TODO: rate limit necessary? maybe just use an interval?
 		return new Promise<void>((r) => setTimeout(r, this.pullRateLimit));
 	}
 
-	cancel() {
-		this.device.close();
+	get paused() {
+		return this._paused;
 	}
 
-	active(s: "stop" | "go") {
-		if (s === "stop")
-			this.paused = new Promise<void>((resolve) => {
-				this.unpause = resolve;
-			});
-		else {
-			this.paused = false;
-			this.unpause();
-		}
-		return s;
+	set paused(i: boolean) {
+		this._paused = i;
+		// TODO: should this be a push source?
+		if (!this._paused) this.pull(this.cont!);
 	}
+
+	//cancel() { this.device.close(); }
 }

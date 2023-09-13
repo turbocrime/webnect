@@ -1,8 +1,8 @@
-import { CamUsbCommand, CamUsbControl, CamMagic } from "./enum/cam";
+import { CamUsbCommand, CamUsbControl, CamMagic } from "./enum";
 
-const CMD_HEADER_SIZE = 8; // bytes
-const RESPONSE_TIMEOUT_MS = 200;
-const RESPONSE_RETRY_MS = 15;
+const COMMAND_HEADER_SIZE = 8; // bytes
+const COMMAND_RESPONSE_TIMEOUT_MS = 300;
+const COMMAND_RESPONSE_RETRY_MS = 15;
 
 export type CamCommandOut = CamCommand & {
 	magic: CamMagic.COMMAND_OUT;
@@ -18,14 +18,13 @@ export class CamCommand extends Uint16Array {
 
 	private _response?: Promise<CamCommandIn>;
 	private resolve?: (value: CamCommandIn) => void;
-	// rome-ignore lint/suspicious/noExplicitAny: reject for any reason
-	private reject?: (reason?: any) => void;
+	private reject?: (reason?: unknown) => void;
 
 	get magic() {
 		return this.header.getUint16(0, true);
 	}
 	get cmdLength() {
-		// size in i16 elements, sans header
+		// size in two-byte i16 elements, sans header
 		return this.header.getUint16(2, true);
 	}
 	get cmdId() {
@@ -35,7 +34,7 @@ export class CamCommand extends Uint16Array {
 		return this.header.getUint16(6, true);
 	}
 	get cmdContent() {
-		return new Uint16Array(this.buffer, CMD_HEADER_SIZE);
+		return new Uint16Array(this.buffer, COMMAND_HEADER_SIZE);
 	}
 
 	set cmdTag(tag: number) {
@@ -60,10 +59,13 @@ export class CamCommand extends Uint16Array {
 			cmdBufferOrOpts instanceof ArrayBuffer
 				? cmdBufferOrOpts.slice(
 						0,
-						CMD_HEADER_SIZE +
+						COMMAND_HEADER_SIZE +
+							// TODO: validate size before yeet
 							new DataView(cmdBufferOrOpts).getUint16(2, true) * 2,
 				  )
-				: new ArrayBuffer(CMD_HEADER_SIZE + cmdBufferOrOpts.content.byteLength);
+				: new ArrayBuffer(
+						COMMAND_HEADER_SIZE + cmdBufferOrOpts.content.byteLength,
+				  );
 
 		super(superBuffer);
 
@@ -72,10 +74,10 @@ export class CamCommand extends Uint16Array {
 		} else {
 			const { cmdId, tag, content } = cmdBufferOrOpts;
 			this.set([CamMagic.COMMAND_OUT, content.length, cmdId, tag]);
-			this.set(content, CMD_HEADER_SIZE / content.BYTES_PER_ELEMENT);
+			this.set(content, COMMAND_HEADER_SIZE / content.BYTES_PER_ELEMENT);
 		}
 
-		this.header = new DataView(this.buffer, 0, CMD_HEADER_SIZE);
+		this.header = new DataView(this.buffer, 0, COMMAND_HEADER_SIZE);
 
 		if (this.magic === CamMagic.COMMAND_OUT)
 			this._response = new Promise<CamCommandIn>((resolve, reject) => {
@@ -89,7 +91,7 @@ export class CamCommandIO {
 	private dev: USBDevice;
 	private pending: Map<number, CamCommand> = new Map();
 
-	listening = false;
+	listening?: ReturnType<typeof setInterval>;
 
 	constructor(dev: USBDevice) {
 		this.dev = dev;
@@ -103,48 +105,41 @@ export class CamCommandIO {
 	}
 
 	async pullResponse() {
-		this.listening = Boolean(this.pending.size);
-		if (!this.listening) return;
+		if (!this.pending.size)
+			this.listening = clearInterval(this.listening) as undefined;
+		if (this.listening)
+			return this.dev
+				.controlTransferIn(
+					{
+						requestType: "vendor",
+						recipient: "device",
+						request: CamUsbControl.CAMERA,
+						value: 0,
+						index: 0,
+					},
+					512, // TODO: really?
+				)
+				.then((usbResult) => {
+					if (usbResult.status !== "ok") throw usbResult;
+					if (!usbResult.data?.byteLength) return;
 
-		const transfer = this.dev.controlTransferIn(
-			{
-				requestType: "vendor",
-				recipient: "device",
-				request: CamUsbControl.CAMERA,
-				value: 0,
-				index: 0,
-			},
-			512, // TODO: really?
-		);
-
-		await transfer.then((usbResult) => {
-			if (usbResult.status !== "ok")
-				return console.warn("Command response bad", usbResult);
-			if (!usbResult.data?.byteLength)
-				return console.warn("Command response empty");
-
-			let multiResponse = 0;
-			do {
-				const res = new CamCommand(
-					usbResult.data.buffer.slice(multiResponse),
-				) as CamCommandIn;
-				const pend = this.pending.get(res.cmdTag);
-				if (pend) {
-					pend.response = res;
-					this.pending.delete(res.cmdTag);
-				} else console.warn("Command response unexpected", usbResult);
-				multiResponse +=
-					CMD_HEADER_SIZE + res.cmdLength * res.BYTES_PER_ELEMENT;
-			} while (multiResponse < usbResult.data.byteLength);
-		});
-
-		// TODO: better rate limit
-		setTimeout(() => this.pullResponse(), RESPONSE_RETRY_MS);
+					let responseIndex = 0;
+					do {
+						const res = new CamCommand(
+							usbResult.data.buffer.slice(responseIndex),
+						) as CamCommandIn;
+						const pend = this.pending.get(res.cmdTag);
+						if (pend) {
+							pend.response = res;
+							this.pending.delete(res.cmdTag);
+						} else console.warn("Command response unexpected", usbResult);
+						responseIndex +=
+							COMMAND_HEADER_SIZE + res.cmdLength * res.BYTES_PER_ELEMENT;
+					} while (responseIndex < usbResult.data.byteLength);
+				});
 	}
 
 	async sendCmd(cmd: CamCommandOut): Promise<CamCommandIn> {
-		this.pending.set(cmd.cmdTag, cmd);
-
 		const usbResult = await this.dev.controlTransferOut(
 			{
 				requestType: "vendor",
@@ -156,17 +151,21 @@ export class CamCommandIO {
 			cmd.buffer,
 		);
 
-		if (usbResult.status !== "ok")
-			throw new Error(`Command failed ${usbResult}`);
+		if (usbResult.status !== "ok" || usbResult.bytesWritten !== cmd.byteLength)
+			throw usbResult;
 
-		if (!this.listening) this.pullResponse();
+		this.pending.set(cmd.cmdTag, cmd);
+		this.listening ??= setInterval(
+			() => this.pullResponse(),
+			COMMAND_RESPONSE_RETRY_MS,
+		);
 
 		return Promise.race([
 			cmd.response,
 			new Promise<never>((_, reject) =>
 				setTimeout(
 					() => reject(new Error(`Command response timeout ${cmd.cmdTag}`)),
-					RESPONSE_TIMEOUT_MS,
+					COMMAND_RESPONSE_TIMEOUT_MS,
 				),
 			),
 		]).finally(() => {

@@ -1,4 +1,4 @@
-const usbSupport = typeof navigator?.usb?.getDevices === "function";
+export const usbSupport = typeof navigator?.usb?.getDevices === "function";
 if (!usbSupport) console.error("WebUSB supported not detected!");
 
 export enum VendorId {
@@ -42,8 +42,25 @@ export const claimNuiMotor = async (d?: USBDevice): Promise<USBDevice> => {
 	return dev;
 };
 
-export * from "./Motor";
+import Motor from "./Motor";
+import Camera from "./Camera";
+import Modes from "./Camera/mode";
+import format from "./stream/format";
+
+export default {
+	usbSupport,
+	ProductId,
+	VendorId,
+	claimNuiCamera,
+	claimNuiMotor,
+	Camera,
+	Motor,
+	Modes,
+	format,
+};
+
+export { Motor, Camera, Modes, format };
 export * from "./Camera";
-export * from "./enum/index";
-export * from "./util/index";
-export * from "./stream/index";
+export * from "./Motor";
+
+export { camIsoWorkerUrl } from "./worker";

@@ -2,15 +2,22 @@
 	"name": "@webnect/webnect",
 	"author": "turbocrime",
 	"description": "a webUSB driver for the xbox360 kinect",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"type": "module",
-	"workspaces": ["demo"],
+	"workspaces": [
+		"demo"
+	],
 	"exports": {
 		".": "./src/index.ts",
-		"./util": "./src/util/index.ts",
-		"./stream": "./src/stream/index.ts"
+		"./Camera": "./src/Camera/index.ts",
+		"./Motor": "./src/Motor/index.ts",
+		"./stream": "./src/stream/index.ts",
+		"./worker": "./src/worker/index.ts"
 	},
-	"files": ["./dist", "./src"],
+	"files": [
+		"./dist",
+		"./src"
+	],
 	"scripts": {
 		"dev": "pnpm -C demo dev",
 		"build": "tsc",
@@ -23,14 +30,16 @@
 		"access": "public",
 		"exports": {
 			".": "./dist/index.js",
-			"./util": "./dist/util/index.js",
-			"./stream": "./dist/stream/index.js"
+			"./Camera": "./dist/Camera/index.js",
+			"./Motor": "./dist/Motor/index.js",
+			"./stream": "./dist/stream/index.js",
+			"./worker": "./dist/worker/index.js"
 		},
 		"types": "./dist/index.d.ts"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "^1.1.2",
 		"@types/w3c-web-usb": "^1.0.6",
-		"@biomejs/biome": "1.0.0",
 		"typescript": "^5.2.2"
 	}
 }

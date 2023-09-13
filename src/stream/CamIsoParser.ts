@@ -1,21 +1,11 @@
-import { CamIsoPacketFlag, CamMagic } from "../enum/cam";
-import { SerializedUSBIsochronousInTransferResult } from "./UnderlyingIsochronousSource";
+import type {
+	SerializedUSBIsochronousInTransferResult,
+	CamIsoPacket,
+	CamIsoPacketHeader,
+} from "./isochronousTypes";
 
-export type CamIsoPacket = {
-	stream: CamIsoPacketFlag;
-	startFrame: boolean;
-	endFrame: boolean;
-	loss: number;
-	header: CamIsoPacketHeader;
-	body: ArrayBuffer;
-};
-
-type CamIsoPacketHeader = {
-	pType: number;
-	pSeq: number;
-	pSize: number;
-	pTime: number;
-};
+import { CamMagic } from "../Camera/enum";
+import { CamIsoPacketFlag } from "./enum";
 
 const PKT_HEADER_SIZE = 12;
 
@@ -60,7 +50,7 @@ export class CamIsoParser
 				const parsed = this.parsePacket(p.data);
 				if (parsed) c.enqueue(parsed);
 			}
-		} else throw new TypeError("unknown chunk");
+		} else throw chunk;
 	}
 
 	parseHeader = (pkt: DataView): CamIsoPacketHeader | false =>

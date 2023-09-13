@@ -1,50 +1,23 @@
-import type { CamIsoPacket } from "../stream/CamIsoParser";
+declare const self: Worker;
+declare const navigator: Navigator & { usb: USB };
 
-declare const navigator: Navigator & {
-	usb: USB;
-};
+export const camIsoWorkerUrl = import.meta.url.toString();
 
-declare const self: Worker & {
-	postMessage: (msg: CamIsoWorkerReply, transfer?: Transferable[]) => void;
-};
-
+import { CamIsoParser, UnderlyingIsochronousSource } from "../stream";
 import {
 	CamIsoEndpoint,
 	CamIsoPacketFlag,
 	CamIsoPacketSize,
-} from "../enum/cam";
-import { CamIsoParser } from "../stream/CamIsoParser";
-import { UnderlyingIsochronousSource } from "../stream/UnderlyingIsochronousSource";
+} from "../stream/enum";
 
-export type CamIsoWorkerOpts = {
-	dev: number;
-	batchSize?: number;
-	devconf?: number;
-	iface?: number;
-	altiface?: number;
-};
-
-export type CamIsoWorkerInitMsg = {
-	type: "init";
-	config: CamIsoWorkerOpts;
-};
-
-export type CamIsoWorkerActiveMsg = {
-	type: "active";
-	depth: "stop" | "go";
-	video: "stop" | "go";
-};
-
-export type CamIsoWorkerMsg = CamIsoWorkerInitMsg | CamIsoWorkerActiveMsg;
-export type CamIsoWorkerReply = CamIsoWorkerInitReply | CamIsoWorkerActiveReply;
-
-export type CamIsoWorkerInitReply = {
-	type: "init";
-	depth: ReadableStream<CamIsoPacket>;
-	video: ReadableStream<CamIsoPacket>;
-};
-
-export type CamIsoWorkerActiveReply = CamIsoWorkerActiveMsg;
+import {
+	CamIsoWorkerActiveMsg,
+	CamIsoWorkerActiveReply,
+	CamIsoWorkerInitMsg,
+	CamIsoWorkerInitReply,
+	CamIsoWorkerMsg,
+	CamIsoWorkerOpts,
+} from "./messageTypes";
 
 const DEFAULT_USB_DEV = 0;
 const DEFAULT_USB_IFACE = 0;
@@ -55,17 +28,20 @@ let iface: USBInterface;
 //let altiface: USBAlternateInterface;
 let batchSize: number | undefined;
 
-const sources = {
-	[CamIsoEndpoint.DEPTH]: {} as UnderlyingIsochronousSource,
-	[CamIsoEndpoint.VIDEO]: {} as UnderlyingIsochronousSource,
-};
+const Video = CamIsoEndpoint.VIDEO;
+const Depth = CamIsoEndpoint.DEPTH;
 
+const sources = {
+	[Depth]: {} as UnderlyingIsochronousSource,
+	[Video]: {} as UnderlyingIsochronousSource,
+};
 self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 	switch (event.data?.type) {
 		case "init": {
+			event.data as CamIsoWorkerInitMsg;
 			await initUsb(event.data.config);
-			const depth = initStream("DEPTH");
-			const video = initStream("VIDEO");
+			const depth = initStream(Depth);
+			const video = initStream(Video);
 			self.postMessage(
 				{ type: "init", depth, video } as CamIsoWorkerInitReply,
 				[depth, video] as Transferable[],
@@ -73,9 +49,10 @@ self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 			break;
 		}
 		case "active": {
+			event.data as CamIsoWorkerActiveMsg;
 			const { depth, video } = event.data;
-			sources[CamIsoEndpoint.DEPTH].active(depth);
-			sources[CamIsoEndpoint.VIDEO].active(video);
+			sources[Depth].paused = !depth;
+			sources[Video].paused = !video;
 			self.postMessage({
 				type: "active",
 				depth,
@@ -83,10 +60,8 @@ self.addEventListener("message", async (event: { data: CamIsoWorkerMsg }) => {
 			} as CamIsoWorkerActiveReply);
 			break;
 		}
-		default: {
-			console.error("Unknown message", event);
-			throw TypeError("Unknown message");
-		}
+		default:
+			throw event;
 	}
 });
 
@@ -99,7 +74,7 @@ const initUsb = async (opt: CamIsoWorkerOpts) => {
 
 	await dev.open();
 
-	if (opt.devconf != null) await dev.selectConfiguration(opt.devconf);
+	//if (opt.devconf != null) await dev.selectConfiguration(opt.devconf);
 	//devconf = dev.configuration!;
 
 	iface = dev.configuration?.interfaces.find(
@@ -107,27 +82,24 @@ const initUsb = async (opt: CamIsoWorkerOpts) => {
 	)!;
 	await dev.claimInterface(iface.interfaceNumber);
 
-	if (opt.altiface != null)
-		await dev.selectAlternateInterface(iface.interfaceNumber, opt.altiface);
+	//if (opt.altiface != null) await dev.selectAlternateInterface(iface.interfaceNumber, opt.altiface);
 	//altiface = iface.alternate;
 
 	batchSize = opt.batchSize;
 };
 
-const initStream = (streamType: "DEPTH" | "VIDEO") => {
+const initStream = (ep: CamIsoEndpoint) => {
+	const epName = CamIsoEndpoint[ep] as keyof typeof CamIsoEndpoint;
 	const source = new UnderlyingIsochronousSource(
 		dev,
-		CamIsoEndpoint[streamType],
-		CamIsoPacketSize[streamType],
+		ep,
+		CamIsoPacketSize[epName],
 		{ batchSize },
 	);
-	sources[CamIsoEndpoint[streamType]] = source;
+	sources[CamIsoEndpoint[epName]] = source;
 	const packetStream = new ReadableStream(source).pipeThrough(
 		new TransformStream(
-			new CamIsoParser(
-				CamIsoPacketFlag[streamType],
-				CamIsoPacketSize[streamType],
-			),
+			new CamIsoParser(CamIsoPacketFlag[epName], CamIsoPacketSize[epName]),
 		),
 	);
 	return packetStream;
