@@ -1,11 +1,57 @@
 import "./style.css";
 
-import k from "@webnect/webnect";
+import k, { format } from "@webnect/webnect";
+
+const d = document;
+const usb = navigator.usb;
+
+// canvas
+const cWidth = 640;
+const cHeight = 480;
+const cAspect = cWidth / cHeight;
+const fsAspect = screen.width / screen.height;
+
+const videoCanvas = d.querySelector<HTMLCanvasElement>("#videoCanvas")!;
+const videoCanvas2dCtx = videoCanvas.getContext("2d")!;
+
+const motorDemo = d.querySelector<HTMLFieldSetElement>("#motorDemo")!;
+const cameraDemo = d.querySelector<HTMLFieldSetElement>("#cameraDemo")!;
+
+const el = Object.fromEntries(
+	[
+		"annoying",
+		"plugItIn",
+		"pairedDevices",
+		"pairedDeviceList",
+		"connectUsb",
+
+		"videoFps",
+
+		"angleDisplay",
+		"servoDisplay",
+		"accelDisplay",
+	].map((s) => [s, d.querySelector(`#${s}`)!] as [string, HTMLElement]),
+);
+
+const ui = Object.fromEntries(
+	[
+		"cameraCb",
+		"videoFlipCb",
+		"videoFsBtn",
+		"videoModeOpt",
+
+		"motorCb",
+		"ledInput",
+		"tiltInput",
+	].map((s) => [s, d.querySelector(`#${s}`)!] as [string, HTMLInputElement]),
+);
+
+const getUsb = () => navigator.usb.getDevices();
 
 const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
-	const rgbaFrame = rgba ?? new Uint8ClampedArray(640 * 480 * 4);
+	const rgbaFrame = rgba ?? new Uint8ClampedArray(cWidth * cHeight * 4);
 	// frame is 11bit packed gray, unpack to u16 gray
-	const grayFrame = k.format.unpackGray(11, raw);
+	const grayFrame = format.unpackGray(11, raw);
 
 	// moving color ramps
 	const colorMarch = window.performance.now() / 10;
@@ -21,156 +67,82 @@ const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
 	return rgbaFrame;
 };
 
-if (typeof navigator?.usb?.getDevices === "function")
-	document.getElementById("annoying")!.remove();
-
-let existingUsb = await navigator.usb.getDevices();
-const forgottenUsb = new Array();
-const plugItIn = document.querySelector<HTMLDivElement>("#plugItIn")!;
-const pairedDeviceDisplay =
-	document.querySelector<HTMLDivElement>("#pairedDevices")!;
-
-function renderExistingUsb() {
-	const pairedDeviceList =
-		document.querySelector<HTMLDivElement>("#pairedDeviceList")!;
-	pairedDeviceList.innerHTML = "";
-	existingUsb.forEach((device) => {
-		const idStr = [device.productName!, device?.serialNumber].join(" ");
-
-		const option = Object.assign(document.createElement("label"), {
+async function listDevices(devices: USBDevice[]) {
+	el.pairedDeviceList.innerHTML = "";
+	devices.forEach((device) => {
+		if (!device) return;
+		const deviceLabel = Object.assign(d.createElement("label"), {
 			className: "pairedDevice",
-			textContent: idStr,
+			textContent: `${device.productName} ${device?.serialNumber}`,
 		});
-		const checkbox = Object.assign(document.createElement("input"), {
+		const checkbox = Object.assign(d.createElement("input"), {
 			type: "checkbox",
 			checked: true,
-			value: idStr,
 		});
-
-		option.prepend(checkbox);
-		checkbox.addEventListener("change", async () => {
-			await device.close();
-			await device.forget();
-			forgottenUsb.push(idStr);
-			updateExistingUsb();
+		deviceLabel.prepend(checkbox);
+		checkbox.addEventListener("change", () => {
+			device.close();
+			device.forget();
+			checkbox.disabled = true;
+			deviceLabel.classList.add("forgotten");
 		});
-		pairedDeviceList.appendChild(option);
-	});
-	forgottenUsb.forEach((forgottenStr) => {
-		const forgottenOption = Object.assign(document.createElement("label"), {
-			className: "pairedDevice forgotten",
-			textContent: forgottenStr,
-		});
-		const disabledCheckBox = Object.assign(document.createElement("input"), {
-			type: "checkbox",
-			checked: false,
-			disabled: true,
-		});
-		forgottenOption.prepend(disabledCheckBox);
-		pairedDeviceList.appendChild(forgottenOption);
+		el.pairedDeviceList.appendChild(deviceLabel);
 	});
 }
 
-const updateExistingUsb = async () => {
-	existingUsb = await navigator.usb.getDevices();
-	renderExistingUsb();
-};
-
-async function setupDevice() {
-	await updateExistingUsb();
-	if (existingUsb.length) {
-		plugItIn.hidden = true;
-		pairedDeviceDisplay.hidden = false;
-		const devicesArg: {
-			motor: boolean | USBDevice;
-			camera: boolean | USBDevice;
-			audio: boolean | USBDevice;
-		} = { motor: false, camera: false, audio: false };
-		existingUsb.forEach((device) => {
-			switch (device.productId) {
-				case k.ProductId.NUI_MOTOR:
-					devicesArg.motor = device;
-					break;
-				case k.ProductId.NUI_CAMERA:
-					devicesArg.camera = device;
-					break;
-			}
-		});
-		if (devicesArg.camera) setupCameraDemo(devicesArg.camera as USBDevice);
-		if (devicesArg.motor) setupMotorDemo(devicesArg.motor as USBDevice);
-	}
-}
-setupDevice();
-
-document
-	.querySelector<HTMLButtonElement>("#connectUsb")!
-	.addEventListener("click", async () => {
-		const { motor, camera, audio } = {
-			motor: document.querySelector<HTMLInputElement>("#motorCb")!.checked
-				? await k.claimNuiMotor()
-				: undefined,
-			camera: document.querySelector<HTMLInputElement>("#cameraCb")!.checked
-				? await k.claimNuiCamera()
-				: undefined,
-			audio: document.querySelector<HTMLInputElement>("#audioCb")!.checked,
-		};
-		if (!(motor || camera || audio))
-			return alert("Select at least one device.");
-		setupDevice();
+async function setupDevices(devices: USBDevice[]) {
+	devices.forEach((device) => {
+		if (!device) return;
+		el.plugItIn.hidden = true;
+		el.pairedDevices.hidden = false;
+		switch (device?.productId) {
+			case k.ProductId.NUI_MOTOR:
+				setupMotorDemo(device as USBDevice);
+				break;
+			case k.ProductId.NUI_CAMERA:
+				setupCameraDemo(device as USBDevice);
+				break;
+		}
 	});
+}
 
 function setupCameraDemo(cameraDevice: USBDevice) {
 	cameraDevice.open();
 	const camera = new k.Camera(cameraDevice);
-	const cameraDemo =
-		document.querySelector<HTMLFieldSetElement>("#cameraDemo")!;
 	cameraDemo.hidden = false;
 	cameraDemo.disabled = false;
 	cameraDemo.classList.remove("disabled");
 
-	const frameCounter = Array();
-	const videoFps = document.getElementById("videoFps")!;
+	let frameCounter = 0;
 	setInterval(() => {
-		videoFps.innerText = `${frameCounter.length}`;
-		frameCounter.splice(0, frameCounter.length);
+		el.videoFps.innerText = `FPS: ${frameCounter}`;
+		frameCounter = 0;
 	}, 1000);
 
-	const videoCanvas =
-		document.querySelector<HTMLCanvasElement>("#videoCanvas")!;
-	const videoCanvas2dCtx = videoCanvas.getContext("2d")!;
-
 	// calculate fullscreen center crop
-	const canvasAspect = 640 / 480;
-	const screenAspect = screen.width / screen.height;
-	const fsWidth = screenAspect > canvasAspect ? 640 : screenAspect * 480;
-	const fsHeight = screenAspect > canvasAspect ? 640 / screenAspect : 480;
-	const fsZeroX = -((640 - fsWidth) / 2);
-	const fsZeroY = -((480 - fsHeight) / 2);
+	const fsWidth = fsAspect > cAspect ? cWidth : fsAspect * cHeight;
+	const fsHeight = fsAspect > cAspect ? cWidth / fsAspect : cHeight;
+	const fsZeroX = -((cWidth - fsWidth) / 2);
+	const fsZeroY = -((cHeight - fsHeight) / 2);
 
-	const videoModeOption =
-		document.querySelector<HTMLOptionElement>("#videoMode")!;
-	videoModeOption.addEventListener("change", async () => {
+	ui.videoModeOpt.addEventListener("change", async () => {
 		await endStream();
 		console.log("ended stream");
 		await runStream();
 	});
 
-	const videoFlipCb = document.querySelector<HTMLInputElement>("#flipCb")!;
-	videoFlipCb.addEventListener("change", async () => {
-		camera.mode(
-			{ flip: videoFlipCb.checked ? 1 : 0 },
-			{ flip: videoFlipCb.checked ? 1 : 0 },
-		);
+	ui.videoFlipCb.addEventListener("change", async () => {
+		const flip = ui.videoFlipCb.checked ? 1 : 0;
+		camera.mode({ flip }, { flip });
 	});
 
-	const videoFsBtn = document.querySelector<HTMLButtonElement>("#videoFsBtn")!;
-	videoFsBtn.addEventListener("click", () => {
+	ui.videoFsBtn.addEventListener("click", () => {
 		videoCanvas.requestFullscreen();
 	});
 
 	let wakeLock: WakeLockSentinel;
-	document.addEventListener("fullscreenchange", async () => {
-		if (document.fullscreenElement) {
+	d.addEventListener("fullscreenchange", async () => {
+		if (d.fullscreenElement) {
 			videoCanvas.width = fsWidth;
 			videoCanvas.height = fsHeight;
 			try {
@@ -186,65 +158,58 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 	});
 
 	let reader: ReadableStreamDefaultReader;
-	let camStream: ReadableStream<ImageData>;
+	let camStream: ReadableStream;
+
 	const runStream = async () => {
 		try {
 			await camera.ready;
-			switch (videoModeOption.value) {
+			const flip = ui.videoFlipCb.checked ? 1 : 0;
+			switch (ui.videoModeOpt.value) {
 				case "depth": {
-					await camera.mode(
-						{
-							...k.Modes.DEPTH,
-							flip: videoFlipCb.checked ? 1 : 0,
-						},
-						k.Modes.OFF,
-					);
-
-					if (camera.depth.rawDeveloper)
-						camera.depth.rawDeveloper.customFn = customDepthRgba;
-					else console.error("failed to set custom deraw");
-					camStream = camera.depth.readable as ReadableStream<ImageData>;
+					camera.mode({ ...k.Modes.DEPTH, flip }, k.Modes.OFF);
+					camera.depth.rawDeveloper!.customFn = customDepthRgba;
+					camStream = camera.depth.readable;
 					break;
 				}
 				case "visible": {
-					await camera.mode(k.Modes.OFF, {
+					camera.mode(k.Modes.OFF, {
 						...k.Modes.VISIBLE,
-						flip: videoFlipCb.checked ? 1 : 0,
+						flip,
 					});
-					camStream = camera.video.readable as ReadableStream<ImageData>;
+					camStream = camera.video.readable;
 					break;
 				}
 				case "ir": {
-					await camera.mode(k.Modes.OFF, {
+					camera.mode(k.Modes.OFF, {
 						...k.Modes.INFRARED,
-						flip: videoFlipCb.checked ? 1 : 0,
+						flip,
 					});
-					camStream = camera.video.readable as ReadableStream<ImageData>;
+					camStream = camera.video.readable;
 					break;
 				}
 				default:
-					camStream = camera.video.readable as ReadableStream<ImageData>;
+					camStream = camera.video.readable;
 			}
 
 			reader = camStream.getReader();
 			const frameGenerator = async function* () {
 				try {
-					while (true) {
+					while (++frameCounter) {
 						const frame = await reader.read();
 						if (frame.done) break;
 						yield frame.value;
 					}
-				} catch {
+				} catch (e) {
+					if (!String(e).startsWith("TypeError: Releasing Default reader"))
+						throw e;
 				} finally {
 					if (camStream.locked) reader.releaseLock();
 				}
 			};
-			for await (const drawFrame of frameGenerator()) {
-				if (document.fullscreenElement)
-					videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY);
-				else videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
-				frameCounter.push(true);
-			}
+			for await (const drawFrame of frameGenerator())
+				d.fullscreenElement
+					? videoCanvas2dCtx.putImageData(drawFrame, fsZeroX, fsZeroY)
+					: videoCanvas2dCtx.putImageData(drawFrame, 0, 0);
 		} catch (e) {
 			cameraDemo.disabled = true;
 			cameraDemo.classList.add("disabled");
@@ -253,8 +218,12 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 	};
 
 	const endStream = async () => {
-		if (camStream.locked) reader.releaseLock();
-		await camera.mode(k.Modes.OFF, k.Modes.OFF);
+		try {
+			if (camStream.locked) reader.releaseLock();
+		} catch (e) {
+			if (!String(e).startsWith("TypeError: Releasing Default reader")) throw e;
+		}
+		camera.mode(k.Modes.OFF, k.Modes.OFF);
 	};
 
 	runStream();
@@ -263,54 +232,60 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 function setupMotorDemo(motorDevice: USBDevice) {
 	motorDevice.open();
 	const motor = new k.Motor(motorDevice);
-	const motorDemo = document.querySelector<HTMLFieldSetElement>("#motorDemo")!;
 	motorDemo.hidden = false;
 	motorDemo.disabled = false;
 
+	const servoModes = ["off", "maximum", undefined, undefined, "moving"];
 	const ledModes = [
 		["black", "off"],
 		["green", "green"],
 		["red", "red"],
 		["orange", "amber"],
 	];
+
 	let ledMode = 0;
-	const ledInput = document.querySelector<HTMLInputElement>("#ledInput")!;
-	ledInput.addEventListener("click", () => {
+	ui.ledInput.addEventListener("click", () => {
 		ledMode = (ledMode + 1) % 4;
 		motor?.setLed(ledMode);
 		const [styleColor, nameColor] = ledModes[ledMode];
-		ledInput.textContent = `LED is ${nameColor}`;
-		ledInput.style.background = styleColor;
+		ui.ledInput.textContent = `LED is ${nameColor}`;
+		ui.ledInput.style.background = styleColor;
 	});
 
-	const servoModes = ["off", "maximum", undefined, undefined, "moving"];
-	const angleDisplay = document.querySelector<HTMLDivElement>("#angleDisplay")!;
-	const servoDisplay = document.querySelector<HTMLDivElement>("#servoDisplay")!;
-	const accelDisplay = document.querySelector<HTMLDivElement>("#accelDisplay")!;
+	ui.tiltInput.addEventListener("change", () =>
+		motor!.setTilt(parseInt(ui.tiltInput.value)),
+	);
 
-	const tiltInput = document.querySelector<HTMLInputElement>("#tiltInput")!;
-	tiltInput.addEventListener("change", () => {
-		const angle = parseInt(tiltInput.value);
-		motor!.setTilt(angle);
-	});
-
-	setInterval(() => {
-		motor!
-			.getState()
-			.then(
-				(motorState: {
-					angle?: number;
-					servo: number;
-					accel: [number, number, number];
-				}) => {
-					const { angle, servo, accel } = motorState;
-					angleDisplay.textContent = String(angle);
-					servoDisplay.textContent = String(servoModes[servo]);
-					accelDisplay.textContent = String(accel);
-				},
-			)
-			.catch(() => {
-				motorDemo.disabled = true;
-			});
-	}, 1000);
+	setInterval(
+		() =>
+			motor
+				.getState()
+				.then(({ angle, servo, accel }) => {
+					el.angleDisplay.textContent = String(angle);
+					el.servoDisplay.textContent = String(servoModes[servo]);
+					el.accelDisplay.textContent = String(accel);
+				})
+				.catch(() => {
+					motorDemo.disabled = true;
+				}),
+		1000,
+	);
 }
+
+(async () => {
+	if (typeof usb?.getDevices === "function") el.annoying!.remove();
+
+	el.connectUsb.addEventListener("click", async () => {
+		await Promise.allSettled([
+			ui.motorCb.checked && (await k.claimNuiMotor()),
+			ui.cameraCb.checked && (await k.claimNuiCamera()),
+		]);
+		const extant = await getUsb();
+		listDevices(extant);
+		setupDevices(extant);
+	});
+
+	const extant = await getUsb();
+	listDevices(extant);
+	setupDevices(extant);
+})();

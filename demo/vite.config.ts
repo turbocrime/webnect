@@ -5,6 +5,12 @@ export default defineConfig(({ command }) => ({
 	plugins: [basicSsl()],
 	build: {
 		target: "es2022",
+		rollupOptions: {
+			output: {
+				manualChunks: {
+					worker: ["@webnect/webnect/worker"],
+				},
+			},
+		},
 	},
-	base: command === "build" ? "/webnect/" : "",
 }));

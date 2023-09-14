@@ -4,13 +4,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script type="module" src="src/main.ts"></script>
   <title>webnect demo</title>
 </head>
 
 <body>
-  <div id="app"></div>
-  <script type="module" src="/src/main.ts"></script>
-
   <marquee id="annoying" behavior="alternate">WebUSB not found</marquee>
 
   <div id="plugItIn">
@@ -40,12 +38,9 @@
 
   <fieldset id="pairedDevices" hidden>
     <legend>
-      <h3>
-        Paired Devices
-      </h3>
+      <h3>Paired Devices</h3>
     </legend>
-    <div id="pairedDeviceList">
-    </div>
+    <div id="pairedDeviceList"></div>
   </fieldset>
 
   </div>
@@ -54,14 +49,14 @@
     <legend>
       <h2>Camera</h2>
     </legend>
-    <button id="videoFsBtn">FullscreenVideo</button>
-    <select id="videoMode">
+    <button id="videoFsBtn">Fullscreen Video</button>
+    <select id="videoModeOpt">
       <option value="depth">Depth</option>
       <option value="visible">Visible</option>
       <option value="ir">Infrared</option>
     </select>
-    <div>FPS: <span id="videoFps"></span></div>
-    <label><input type="checkbox" id="flipCb"></input>Flip</label>
+    <div id="videoFps"></div>
+    <label><input type="checkbox" id="videoFlipCb"></input>Flip</label>
     <div class="canvasBack">
       <canvas id="videoCanvas" width="640" height="480"></canvas>
     </div>
