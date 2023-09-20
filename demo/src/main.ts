@@ -1,3 +1,4 @@
+import { ToRgbaBuffer } from "../../src/stream/format";
 import "./style.css";
 
 import k, { format } from "@webnect/webnect";
@@ -48,10 +49,12 @@ const ui = Object.fromEntries(
 
 const getUsb = () => navigator.usb.getDevices();
 
-const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
-	const rgbaFrame = rgba ?? new Uint8ClampedArray(cWidth * cHeight * 4);
+const customDepthRgba = (raw: ArrayBuffer, out?: ArrayBuffer) => {
+	const rgbaFrame = out
+		? new Uint8ClampedArray(out)
+		: new Uint8ClampedArray(cWidth * cHeight * 4);
 	// frame is 11bit packed gray, unpack to u16 gray
-	const grayFrame = format.unpackGray(11, raw);
+	const grayFrame = new Uint16Array(format.unpackGray(11, raw)!);
 
 	// moving color ramps
 	const colorMarch = window.performance.now() / 10;
@@ -64,7 +67,7 @@ const customDepthRgba = (raw: ArrayBuffer, rgba?: Uint8ClampedArray) => {
 		rgbaFrame[i * 4 + 2] = ((grayPixel << 3) + colorMarch) & 0xff;
 		rgbaFrame[i * 4 + 3] = grayPixel < 2047 ? 0xff : 0x00;
 	}
-	return rgbaFrame;
+	if (!out) return rgbaFrame.buffer;
 };
 
 async function listDevices(devices: USBDevice[]) {
@@ -108,7 +111,9 @@ async function setupDevices(devices: USBDevice[]) {
 
 function setupCameraDemo(cameraDevice: USBDevice) {
 	cameraDevice.open();
-	const camera = new k.Camera(cameraDevice);
+	const camera = new k.Camera(cameraDevice, {
+		deraw: { depth: customDepthRgba as ToRgbaBuffer },
+	});
 	cameraDemo.hidden = false;
 	cameraDemo.disabled = false;
 	cameraDemo.classList.remove("disabled");
@@ -133,7 +138,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 
 	ui.videoFlipCb.addEventListener("change", async () => {
 		const flip = ui.videoFlipCb.checked ? 1 : 0;
-		camera.mode({ flip }, { flip });
+		camera.mode({ depth: { flip }, video: { flip } });
 	});
 
 	ui.videoFsBtn.addEventListener("click", () => {
@@ -166,29 +171,32 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 			const flip = ui.videoFlipCb.checked ? 1 : 0;
 			switch (ui.videoModeOpt.value) {
 				case "depth": {
-					camera.mode({ ...k.Modes.DEPTH, flip }, k.Modes.OFF);
-					camera.depth.rawDeveloper!.customFn = customDepthRgba;
-					camStream = camera.depth.readable;
+					camera.mode({
+						depth: { ...k.Modes.DEPTH, flip },
+						video: k.Modes.OFF,
+					});
+					//camera.deraw({ depth: customDepthRgba });
+					camStream = camera.depth;
 					break;
 				}
 				case "visible": {
-					camera.mode(k.Modes.OFF, {
-						...k.Modes.VISIBLE,
-						flip,
+					camera.mode({
+						depth: k.Modes.OFF,
+						video: { ...k.Modes.VISIBLE, flip },
 					});
-					camStream = camera.video.readable;
+					camStream = camera.video;
 					break;
 				}
 				case "ir": {
-					camera.mode(k.Modes.OFF, {
-						...k.Modes.INFRARED,
-						flip,
+					camera.mode({
+						depth: k.Modes.OFF,
+						video: { ...k.Modes.INFRARED, flip },
 					});
-					camStream = camera.video.readable;
+					camStream = camera.video;
 					break;
 				}
 				default:
-					camStream = camera.video.readable;
+					camStream = camera.depth;
 			}
 
 			reader = camStream.getReader();
@@ -223,7 +231,7 @@ function setupCameraDemo(cameraDevice: USBDevice) {
 		} catch (e) {
 			if (!String(e).startsWith("TypeError: Releasing Default reader")) throw e;
 		}
-		camera.mode(k.Modes.OFF, k.Modes.OFF);
+		camera.mode({ depth: k.Modes.OFF, video: k.Modes.OFF })
 	};
 
 	runStream();

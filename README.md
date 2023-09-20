@@ -33,60 +33,49 @@ original kinect only.
 ### Xbox NUI Camera
 
 * depth 11bpp, 10bpp
-* visible 8bpp bayer
+* visible 8bpp bayer, 16bpp yuv
 * infrared 10bpp
+* arbitrary register manipulation
 
-visible and infrared stream from the same endpoint, so you can only have one at a time.
+visible and infrared stream from the same endpoint, so you can only have one at a time. you can use my pipeline and get a `ReadableStream<ImageData>` that you just blit to canvas, or set a custom deraw function.
 
 ## why
 
-i failed to build libfreenect with emscripten. libusb added webusb/wasm platform support last year, so theoretically it's possible.
-
-whatever. its the future and webusb is real
+building libfreenect with emscripten turned out to be impossible for various reasons.  whatever. it's the future and webusb is real
 
 ## how
 
 go dig your kinect out of the closet. plug it in. open <https://turbocrime.github.io/webnect>
 
+for a local demo, clone this repo.
+
 ## diy
 
 available on npm as [`@webnect/webnect`](https://www.npmjs.com/package/@webnect/webnect)
 
-or for a local demo, clone this repo. run
-
-```sh
-$ pnpm install
-$ pnpm dev
-```
-
-that kicks off a little https guy with a fresh self-signed cert.
-
-open <https://localhost:5174/>
-
-after you dismiss the scary ssl warning you'll see a page with basic demos. go wild.
-
-by default, it will try to acquire just the camera. hit the button (webusb requires user action to initiate), then select one of the available devices in the modal (there is probably only one).
-
-no docs, but the lib is pretty simple. you can instantiate a new kinect with
+no docs yet, but it's pretty simple. you can grab a new kinect camera with
 
 ```typescript
-import { KinectDevice } from webnect;
-const k = await (new KinectDevice()).ready;
+import k from "@webnect/webnect";
+const dev: USBDevice = await k.claimNuiCamera();
+const kcam = k.Camera(dev);
+kcam.mode({ depth: k.DEPTH_MODE });
+const depthStream: ReadableStream<ImageData> = kcam.depth.getReader();
 ```
 
-the constructor takes a single optional argument, `devices`, of type
+alternatively, if you want raw frames in a specific mode, you could
 
 ```typescript
-devices? : {
-    camera?: USBDevice | boolean, // default true
-    motor?: USBDevice| boolean, // default false
-    audio?: USBDevice | boolean, // default false
-}
+import k, { Modes, CamType, CamFmtVisible } from "@webnect/webnect";
+const dev: USBDevice = await k.claimNuiCamera();
+const kcam = k.Camera(dev, {
+        modes: { depth: Modes.OFF, video: { stream: CamType.VISIBLE, format: CamFmtVisible.YUV_16B } },
+        deraw: { depth: false, video: false }
+});
+const yuvFrameStream: ReadableStream<ArrayBuffer> = kcam.video.getReader();
 ```
 
-pass a boolean indicating your desire to request acquisition, or pass a USBDevice if you have already one already acquired.
-
-### um its broekn
+### um its broekn??
 
 if you see an empty device selection modal, you probably have the wrong model kinect. you can check your usb devices with `lsusb` on linux or on `system_profiler SPUSBDataType` on macos
 
@@ -100,10 +89,6 @@ also, typescript aint exactly the optimal language for bitmath or destructuring 
 
 ## way
 
-the mathy parts are an obvious candidate for assemblyscript and webgpu acceleration. do NOT send a patch i wanna do it
-
-i should probably learn how to actually use canvas and streams
-
-probably going after pose features next, maybe registration of visible light to depth frames. and then audio device and firmware stuff.
+probably going after pose features next, maybe alignment of video to depth. and then firmware/audio stuff.
 
 someday.... kinect2?

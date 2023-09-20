@@ -1,5 +1,6 @@
 import type { CamCommandOut } from "./command";
 import type { CamMode, CamModeSet } from "./mode";
+import type { ToRgbaBuffer } from "../stream/format";
 
 import type {
 	CamIsoWorkerActiveMsg,
@@ -25,20 +26,45 @@ const WORKER_REPLY_TIMEOUT_MS = 1000;
 const Video = CamIsoEndpoint.VIDEO;
 const Depth = CamIsoEndpoint.DEPTH;
 
+type CameraInitOpts = {
+	modes?: {
+		depth?: Partial<CamMode> | boolean;
+		video?: Partial<CamMode> | boolean;
+	};
+	deraw?: {
+		depth?: CamFrameDeveloper | ToRgbaBuffer | boolean;
+		video?: CamFrameDeveloper | ToRgbaBuffer | boolean;
+	};
+};
+
 export default class Camera {
-	public async mode(
-		depthMode?: false | Partial<CamMode>,
-		videoMode?: false | Partial<CamMode>,
-	) {
-		return this.setMode(Modes(depthMode ?? false, videoMode ?? false));
+	public async mode({
+		depth,
+		video,
+	}: {
+		depth: boolean | Partial<CamMode>;
+		video: boolean | Partial<CamMode>;
+	}) {
+		return this.setMode(Modes(depth, video));
+	}
+
+	public async deraw({
+		depth,
+		video,
+	}: {
+		depth?: boolean | CamFrameDeveloper | ToRgbaBuffer;
+		video?: boolean | CamFrameDeveloper | ToRgbaBuffer;
+	}) {
+		if (depth != null) this[Depth].deraw = depth;
+		if (video != null) this[Video].deraw = video;
 	}
 
 	public get depth() {
-		return this[Depth];
+		return this[Depth].readable;
 	}
 
 	public get video() {
-		return this[Video];
+		return this[Video].readable;
 	}
 
 	public get cachedRegisters(): Readonly<
@@ -88,13 +114,6 @@ export default class Camera {
 	private [Depth]: CamStream;
 	private [Video]: CamStream;
 
-	/*
-	private _cachedRegisters = {} as Record<
-		CamOption | keyof typeof CamOption,
-		number
-	>;
-	*/
-
 	private _cmdTag = 0;
 	private cmdIO: CamCommandIO;
 
@@ -102,25 +121,24 @@ export default class Camera {
 
 	public ready: Promise<this>;
 
-	constructor(
-		dev: USBDevice,
-		cameraModes?: CamModeSet,
-		deraw = {
-			[Depth]: true,
-			[Video]: true,
-		} as Partial<Record<CamIsoEndpoint, CamFrameDeveloper | boolean>>,
-	) {
+	constructor(dev: USBDevice, initOpts?: CameraInitOpts) {
 		this.dev = dev;
 		this.cmdIO = new CamCommandIO(dev);
 
-		this[Video] = new CamStream(Modes.OFF, deraw[Depth] ?? true);
-		this[Depth] = new CamStream(Modes.OFF, deraw[Video] ?? true);
+		const { modes, deraw } = {
+			deraw: { depth: true, video: true },
+			...initOpts,
+		};
 
-		const parsedMode = parseModeOpts(
-			{ [Depth]: Modes.OFF, [Video]: Modes.OFF },
-			true,
-			cameraModes,
-		);
+		this[Video] = new CamStream(deraw.video ?? true);
+		this[Depth] = new CamStream(deraw.depth ?? true);
+
+		const parsedMode =
+			modes &&
+			parseModeOpts({ [Depth]: Modes.OFF, [Video]: Modes.OFF }, true, {
+				[Depth]: modes?.depth ?? Modes.OFF,
+				[Video]: modes?.video ?? Modes.OFF,
+			});
 
 		this.usbWorker = new Worker(camIsoWorkerUrl, {
 			name: "webnect iso worker",
@@ -130,7 +148,7 @@ export default class Camera {
 
 		this.ready = this.initWorker()
 			.then(() => this.initRegisters())
-			.then(() => this.setMode(parsedMode))
+			.then(() => parsedMode && this.setMode(parsedMode))
 			.then(() => this);
 	}
 
@@ -226,11 +244,9 @@ export default class Camera {
 		const d = this[Depth].mode;
 		const v = this[Video].mode;
 
+		// disable cameras while we change the mode
 		this.writeRegister(CamOption.DEPTH_TYPE, 0);
 		this.writeRegister(CamOption.VIDEO_TYPE, 0);
-		// don't await this, write responses are batched
-		// and two writes isn't always enough
-		// to deserve a response :)
 
 		if (d.stream) {
 			this.writeRegister(CamOption.PROJECTOR_CYCLE, 0);
@@ -255,12 +271,12 @@ export default class Camera {
 			this.writeRegister(CamOption.INFRARED_FLIP, v.flip);
 		}
 
-		await Promise.all([
-			d.stream && this.writeRegister(CamOption.DEPTH_TYPE, d.stream),
-			v.stream && this.writeRegister(CamOption.VIDEO_TYPE, v.stream),
-		]);
+		d.stream && this.writeRegister(CamOption.DEPTH_TYPE, d.stream);
+		v.stream && this.writeRegister(CamOption.VIDEO_TYPE, v.stream);
 	}
 
+	// this method is async, but you probably don't want to await it. the
+	// device batches responses and your commands may not merit a response.
 	private async writeRegister(addr: CamOption, value: number) {
 		const write = await this.command(
 			CamUsbCommand.WRITE_REGISTER,

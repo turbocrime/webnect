@@ -1,4 +1,5 @@
 import type { CamMode } from "../Camera/mode";
+import type { ToRgbaBuffer } from "./format";
 
 import {
 	CamType,
@@ -10,54 +11,57 @@ import {
 
 import fmt from "./format";
 
-type ToRgba = (b: ArrayBuffer) => Uint8ClampedArray;
-
-const res = {
+const outputRes = {
 	[CamRes.LOW]: [320, 240],
 	[CamRes.MED]: [640, 480],
 	[CamRes.HIGH]: [1280, 1024],
 } as Record<CamRes, [number, number]>;
 
-export const selectFnToRgba = (
-	mode: CamMode,
-): ((f: ArrayBuffer) => Uint8ClampedArray) => {
-	const [width, height] = res[mode.res] ?? [640, 480];
+export const selectFnToRgba = (mode: CamMode): ToRgbaBuffer => {
+	const [width, height] = outputRes[mode.res] ?? [640, 480];
+	let selectedFn = (f: ArrayBuffer, o?: ArrayBuffer) => {
+		if (o == null) return f;
+		const oA = new Uint32Array(o);
+		const fA = new Uint32Array(f);
+		oA.set(fA);
+	};
 	switch (mode.stream) {
 		case CamType.VISIBLE:
 			if (mode.format === CamFmtVisible.BAYER_8B)
-				return (f) => fmt.bayerToRgba(width, height, f);
+				selectedFn = (f, o) => fmt.bayerToRgba(width, height, f, o);
 			else if (mode.format === CamFmtVisible.YUV_16B)
-				return (f) => fmt.uyvyToRgba(width, height, f);
+				selectedFn = (f, o) => fmt.uyvyToRgba(width, height, f, o);
 			break;
 		case CamType.DEPTH:
 			if (mode.format === CamFmtDepth.D_11B)
-				return (f) => fmt.unpackGrayToRgba(11, f);
+				selectedFn = (f, o) => fmt.unpackGrayToGamma(11, f, o);
 			else if (mode.format === CamFmtDepth.D_10B)
-				return (f) => fmt.unpackGrayToRgba(10, f);
+				selectedFn = (f, o) => fmt.unpackGrayToGamma(10, f, o);
 			break;
 		case CamType.INFRARED:
 			if (mode.format === CamFmtInfrared.IR_10B)
-				return (f) => fmt.unpackGrayToRgba(10, f);
+				selectedFn = (f, o) => fmt.unpackGrayToRgba(10, f, o);
 			break;
 	}
-	return (f: ArrayBuffer) => {
-		console.error("untransformed buffer");
-		return new Uint8ClampedArray(f);
-	};
+	return selectedFn as ToRgbaBuffer;
 };
 
 export class CamFrameDeveloper implements Transformer<ArrayBuffer, ImageData> {
 	private _mode: CamMode;
-	private _customFn?: ToRgba;
-	private rawToRgba: ToRgba;
+	private _customFn?: ToRgbaBuffer;
+	private rawToRgbaBuffer: ToRgbaBuffer;
+	private frameImage?: ImageData;
+	private rgba?: Uint8ClampedArray;
 
 	frameWidth: number;
 
-	constructor(mode: CamMode, customFn?: (r: ArrayBuffer) => Uint8ClampedArray) {
+	constructor(mode: CamMode, customFn?: ToRgbaBuffer) {
 		this._mode = mode;
 		this._customFn = customFn;
-		this.rawToRgba = customFn ?? selectFnToRgba(mode)!;
-		this.frameWidth = (res[mode.res] ?? [640, 480])[0];
+		this.rawToRgbaBuffer = customFn ?? selectFnToRgba(mode)!;
+
+		const r = outputRes[mode.res] ?? [640, 480];
+		this.frameWidth = r[0];
 	}
 
 	get mode() {
@@ -66,20 +70,27 @@ export class CamFrameDeveloper implements Transformer<ArrayBuffer, ImageData> {
 
 	set mode(newMode: CamMode) {
 		this._mode = newMode;
-		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
-		this.frameWidth = (res[newMode.res] ?? [640, 480])[0];
+		this.rawToRgbaBuffer = this.customFn ?? selectFnToRgba(this._mode)!;
+		this.frameWidth = (outputRes[newMode.res] ?? [640, 480])[0];
+		this.frameImage = undefined;
+		this.rgba = undefined;
 	}
 
-	set customFn(newCustomFn: ToRgba) {
+	set customFn(newCustomFn: ToRgbaBuffer | undefined) {
 		this._customFn = newCustomFn;
-		this.rawToRgba = this.customFn ?? selectFnToRgba(this._mode)!;
+		this.rawToRgbaBuffer = this.customFn ?? selectFnToRgba(this._mode)!;
 	}
 
-	get customFn(): ToRgba | undefined {
+	get customFn(): ToRgbaBuffer | undefined {
 		return this._customFn;
 	}
 
 	transform(raw: ArrayBuffer, c: TransformStreamDefaultController<ImageData>) {
-		c.enqueue(new ImageData(this.rawToRgba(raw), this.frameWidth));
+		if (this.rgba?.buffer) this.rawToRgbaBuffer(raw, this.rgba.buffer);
+		else {
+			this.rgba = new Uint8ClampedArray(this.rawToRgbaBuffer(raw)!);
+			this.frameImage = new ImageData(this.rgba, this.frameWidth);
+		}
+		c.enqueue(this.frameImage);
 	}
 }

@@ -2,7 +2,7 @@
 	"name": "@webnect/webnect",
 	"author": "turbocrime",
 	"description": "a webUSB driver for the xbox360 kinect",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"type": "module",
 	"workspaces": [
 		"demo"
@@ -38,7 +38,7 @@
 		"types": "./dist/index.d.ts"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^1.1.2",
+		"@biomejs/biome": "^1.2.2",
 		"@types/w3c-web-usb": "^1.0.6",
 		"typescript": "^5.2.2"
 	}

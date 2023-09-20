@@ -80,7 +80,7 @@ export class CamFrameAssembler implements Transformer<CamIsoPacket, ArrayBuffer>
 			this.frameIdx += body.byteLength;
 		}
 		if (endFrame) {
-			if (this.frameSize > this.frameIdx)
+			if (this.frameIdx < this.frameSize)
 				return this.desync(`frame short by ${this.frameSize - this.frameIdx}`);
 			if (this.sync) c.enqueue(this.frame.buffer.slice(0, this.frameIdx));
 			this.frameIdx = 0;
