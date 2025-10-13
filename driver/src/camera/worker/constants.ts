@@ -1,0 +1,1 @@
+export const ISOCHRONOUS_BATCH_SIZE = 256;

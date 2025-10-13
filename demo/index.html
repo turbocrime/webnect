@@ -1,88 +1,128 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<script type="module" src="src/main.ts"></script>
+		<title>webnect demo</title>
+	</head>
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script type="module" src="src/main.ts"></script>
-  <title>webnect demo</title>
-</head>
+	<body>
+		<div id="hello">
+			<img
+				src="https://github.com/turbocrime/webnect/assets/134443988/141bb8b5-fdf4-45a4-b58e-2f00b590fae8"
+				alt="an image of the appropriate kinect"
+			>
+			<h1>
+				<marquee id="no-usb">WebUSB not found</marquee>
+				<marquee id="yes-usb" hidden>plug in your kinect</marquee>
+			</h1>
+			<h2>
+				this page is a demo for
+				<a href="https://github.com/turbocrime/webnect"
+					>my WebUSB driver for the xbox360 kinect</a
+				>
+			</h2>
+			<p>
+				i have only tried this with my kinect. you can try it on yours if you
+				like.
+			</p>
+			<fieldset id="requestDevices">
+				<legend>
+					<h3>
+						<button id="connectUsb">Request Permission</button>
+					</h3>
+				</legend>
+				<label>
+					<input type="checkbox" id="motorCb" checked>
+					Motor
+				</label>
+				<label>
+					<input type="checkbox" id="cameraCb" checked>
+					Camera
+				</label>
+				<label>
+					<input type="checkbox" id="audioCb" disabled>
+					Audio (not yet)
+				</label>
+			</fieldset>
+			<video
+				muted
+				autoplay
+				loop
+				alt="a recorded video of some colorful depth data"
+			>
+				<source
+					src="https://github.com/turbocrime/webnect/assets/134443988/40879425-cd91-4bae-a14f-633dc0f8d88c"
+				>
+			</video>
+		</div>
 
-<body>
-  <marquee id="annoying" behavior="alternate">WebUSB not found</marquee>
+		<div id="demo">
+			<fieldset id="pairedDevices" hidden>
+				<legend>
+					<h3>Paired Devices</h3>
+				</legend>
+				<div id="pairedDeviceList"></div>
+			</fieldset>
 
-  <div id="plugItIn">
-    <h1>Plug in your kinect</h1>
-    <h2><a href="https://github.com/turbocrime/webnect">webnect is a WebUSB driver for the xbox360 kinect</a></h2>
-    <p>when your kinect is plugged in, activate it with the UI below</p>
-    <img src="https://github.com/turbocrime/webnect/assets/134443988/141bb8b5-fdf4-45a4-b58e-2f00b590fae8"
-      alt="an image of the appropriate kinect">
-    <video autoplay loop>
-      <source src="https://github.com/turbocrime/webnect/assets/134443988/40879425-cd91-4bae-a14f-633dc0f8d88c">
-      </source>
-    </video>
-    <p>Firefox, Safari are not supported ;_; only chrom</p>
-    <p>i have only tried this with my kinect. you can try it on yours if you like</p>
-    <fieldset id="requestDevices">
-      <legend>
-        <h3>
-          New Device
-        </h3>
-      </legend>
-      <button id="connectUsb">Request Devices</button>
-      <label><input type="checkbox" id="motorCb"></input>Motor</label>
-      <label><input type="checkbox" id="cameraCb" checked></input>Camera</label>
-      <label><input type="checkbox" id="audioCb" disabled></input>Audio (not yet)</label>
-    </fieldset>
-  </div>
+			<fieldset id="cameraDemo" hidden>
+				<legend>
+					<h2>Camera</h2>
+				</legend>
+				<canvas id="videoCanvas" width="640" height="480"></canvas>
+				<canvas id="depthCanvas" width="640" height="480"></canvas>
+			</fieldset>
 
-  <fieldset id="pairedDevices" hidden>
-    <legend>
-      <h3>Paired Devices</h3>
-    </legend>
-    <div id="pairedDeviceList"></div>
-  </fieldset>
+			<fieldset id="motorDemo" hidden>
+				<legend>
+					<h2>Motor</h2>
+				</legend>
+				<fieldset id="ledDemo">
+					<legend>
+						<h3>LED</h3>
+					</legend>
+					<button id="ledInput">LED Color</button>
+				</fieldset>
+				<fieldset id="tiltDemo">
+					<legend>
+						<h3>Tilt</h3>
+					</legend>
+					<input
+						id="tiltNumber"
+						type="number"
+						min="-30.5"
+						max="30.5"
+						step="0.5"
+					>
+					<input id="tiltSlider" type="range" min="-30.5" max="30.5" step="0.5">
+					<table>
+						<theadh>
+							<th></th>
+							<th>raw</th>
+							<th>formatted</th>
+						</theadh>
 
-  </div>
+						<tr>
+							<th>tilt</th>
+							<td id="rawAngleDisplay"></td>
+							<td id="angleDegreesDisplay"></td>
+						</tr>
 
-  <fieldset id="cameraDemo" hidden>
-    <legend>
-      <h2>Camera</h2>
-    </legend>
-    <button id="videoFsBtn">Fullscreen Video</button>
-    <select id="videoModeOpt">
-      <option value="depth">Depth</option>
-      <option value="visible">Visible</option>
-      <option value="ir">Infrared</option>
-    </select>
-    <div id="videoFps"></div>
-    <label><input type="checkbox" id="videoFlipCb"></input>Flip</label>
-    <div class="canvasBack">
-      <canvas id="videoCanvas" width="640" height="480"></canvas>
-    </div>
-  </fieldset>
+						<tr>
+							<th>servo</th>
+							<td id="rawServoDisplay"></td>
+							<td id="servoDisplay"></td>
+						</tr>
 
-  <fieldset id="motorDemo" hidden>
-    <legend>
-      <h2>Motor</h2>
-    </legend>
-    <fieldset id="ledDemo">
-      <legend>
-        <h3>LED</h3>
-      </legend>
-      <button id="ledInput">LED Color</button>
-    </fieldset>
-    <fieldset id="tiltDemo">
-      <legend>
-        <h3>Tilt</h3>
-      </legend>
-      <input id="tiltInput" type="range" min="-27" max="27" step="1"></input>
-      <p>tilt: <code id="angleDisplay"></code>°</p>
-      <p>servo: <code id="servoDisplay"></code></p>
-      <p>accel: <code id="accelDisplay"></code></p>
-    </fieldset>
-  </fieldset>
-
-</body>
-
+						<tr>
+							<th>accel</th>
+							<td id="rawAccelDisplay"></td>
+							<td id="accelGDisplay"></td>
+						</tr>
+					</table>
+				</fieldset>
+			</fieldset>
+		</div>
+	</body>
 </html>

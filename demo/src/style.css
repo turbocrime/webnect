@@ -1,69 +1,68 @@
+body {
+	background: #ddd;
+	color: #222;
+}
+
 @media (prefers-color-scheme: dark) {
-    body {
-        padding: 1em;
-        background: #222;
-        color: #ddd;
-    }
+	body {
+		background: #222;
+		color: #ddd;
+	}
 
-    a {
-        color: hsl(240, 100%, 53%);
-    }
-
-    a:visited {
-        color: hsl(271, 68%, 68%);
-    }
-
-    #depthCanvas {
-        filter: invert(1)
-    }
+	a:any-link {
+		filter: invert(0.8) hue-rotate(180deg);
+	}
 }
 
 @media (prefers-color-scheme: light) {
-    body {
-        padding: 1em;
-        background: #ddd;
-        color: #222;
-    }
+	body {
+		background: #ddd;
+		color: #222;
+	}
+}
 
+body {
+	padding: 1em;
 }
 
 label {
-    display: block;
+	display: block;
 }
 
-.canvasBack {
-    padding: 0;
-    margin: 0;
-    width: 640px;
-    height: 480px;
+#hello img {
+	max-width: 640px;
 }
 
-#plugItIn img {
-    width: 100%;
-    max-width: 640px;
+#hello video {
+	max-width: 640px;
 }
 
-#plugItIn video {
-    width: 100%;
-    max-width: 640px;
+canvas {
+	background-color: darkmagenta;
+	background-image:
+		linear-gradient(45deg, black 25%, transparent 25%),
+		linear-gradient(-45deg, black 25%, transparent 25%),
+		linear-gradient(45deg, transparent 75%, black 75%),
+		linear-gradient(-45deg, transparent 75%, black 75%);
+	background-size: 2em 2em;
+	background-position:
+		0 0,
+		0 1em,
+		1em -1em,
+		-1em 0;
 }
 
-.disabled .canvasBack {
-    background-color: darkred;
+canvas:fullscreen {
+	background-image: none;
+	background-color: black;
 }
 
-.canvasBack {
-    background-color: darkmagenta;
-    background-image: linear-gradient(45deg, black 25%, transparent 25%),
-        linear-gradient(-45deg, black 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, black 75%),
-        linear-gradient(-45deg, transparent 75%, black 75%);
-    background-size: 2em 2em;
-    background-position: 0 0, 0 1em, 1em -1em, -1em 0px;
+#tiltDemo td {
+	white-space: pre;
+	text-align: right;
+	font-family: monospace;
 }
 
-#annoying {
-    color: red;
-    font-size: 3em;
-    max-width: 100%;
+marquee {
+	color: red;
 }
