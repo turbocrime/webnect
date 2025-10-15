@@ -4,7 +4,7 @@ import { selectBpp, selectRes } from "../stream/dimensions.js";
 import {
 	bayerToRgbaFloat16,
 	unpackGrayToRgbaFloat16,
-	uyvyToRgbaFloat16,
+	yuvToRgbaFloat16,
 } from "./formats.js";
 import type { RawToRgba } from "./raw-to-rgba.js";
 
@@ -21,7 +21,7 @@ export const selectRawToRgba = (mode: CamMode): RawToRgba => {
 				case CamFmtVisible.BAYER_8B:
 					return bayerToRgbaFloat16.bind(null, selectRes(mode)[0]);
 				case CamFmtVisible.YUV_16B:
-					return uyvyToRgbaFloat16.bind(null);
+					return yuvToRgbaFloat16.bind(null);
 			}
 	}
 };

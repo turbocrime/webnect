@@ -1,4 +1,4 @@
-name: Build CI
+name: Lint/Build/Test CI
 
 permissions:
   contents: read
@@ -21,9 +21,10 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
-          node-version: "lts/*"
+          node-version: "24"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm test

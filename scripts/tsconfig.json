@@ -1,0 +1,7 @@
+{
+	"extends": ["@tsconfig/strictest", "@tsconfig/node-ts", "@tsconfig/node24"],
+	"include": ["./*.ts"],
+	"compilerOptions": {
+		"noEmit": true
+	}
+}

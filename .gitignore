@@ -1,3 +1,5 @@
 node_modules
 dist
 *.local
+*.tsbuildinfo
+__screenshots__

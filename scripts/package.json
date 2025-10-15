@@ -1,0 +1,11 @@
+{
+	"name": "scripts",
+	"type": "module",
+	"private": true,
+	"version": "0.0.1",
+	"devDependencies": {
+		"@tsconfig/node-ts": "^23.6.1",
+		"@tsconfig/node24": "^24.0.1",
+		"@types/node": "^24.7.2"
+	}
+}

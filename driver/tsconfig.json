@@ -1,11 +1,10 @@
 {
 	"$schema": "https://json.schemastore.org/tsconfig",
 	"extends": "@tsconfig/strictest",
-	"include": ["src", "src/global.d.ts"],
-	"exclude": ["dist"],
-	"rootDir": "src",
+	"include": ["src"],
 	"compilerOptions": {
-		"lib": ["ESNext"],
+		"lib": ["DOM", "ESNext"],
+		"noEmit": false,
 		"outDir": "dist",
 		"declaration": true,
 		"declarationMap": true,
