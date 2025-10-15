@@ -100,7 +100,7 @@ export class Motor {
 	public async setPosition(degrees: number): Promise<void> {
 		await this.ready;
 
-		const halfDegrees = Math.round(degrees * 2);
+		const halfDegrees = Math.trunc(degrees * 2);
 		const limited = Math.max(
 			Math.min(halfDegrees, MOTOR_MAX_TILT),
 			-MOTOR_MAX_TILT,

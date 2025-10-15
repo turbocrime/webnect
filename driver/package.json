@@ -5,8 +5,10 @@
 	"version": "0.0.6",
 	"type": "module",
 	"scripts": {
-		"build": "tsc --build --clean",
+		"build": "tsc --build",
 		"clean": "rm -rfv dist",
+		"test": "vitest run --browser.headless",
+		"pretest": "playwright install chromium",
 		"prepack": "$npm_execpath run clean && $npm_execpath run build"
 	},
 	"files": [

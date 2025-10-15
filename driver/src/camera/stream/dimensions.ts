@@ -39,7 +39,7 @@ const irBpp = {
 	[CamFmtInfrared.IR_10B]: 10,
 } as const;
 
-export const selectRes = <M extends CamMode>(mode: M) => {
+export const selectRes = <M extends CamMode>(mode: NonNullable<M>) => {
 	switch (mode?.stream) {
 		case undefined:
 			throw new RangeError("Invalid mode", { cause: mode });
@@ -58,10 +58,8 @@ export const selectRes = <M extends CamMode>(mode: M) => {
 	}
 };
 
-export const selectBpp = <M extends CamMode>(mode: M) => {
-	switch (mode?.stream) {
-		case undefined:
-			throw new RangeError("Invalid mode", { cause: mode });
+export const selectBpp = <M extends CamMode>(mode: NonNullable<M>) => {
+	switch (mode.stream) {
 		case Cam.VISIBLE:
 			return visibleBpp[mode.format] as M extends CamMode<Cam.VISIBLE>
 				? (typeof visibleBpp)[M["format"]]
@@ -77,10 +75,8 @@ export const selectBpp = <M extends CamMode>(mode: M) => {
 	}
 };
 
-export const selectFrameSize = (mode: CamMode) => {
-	switch (mode?.stream) {
-		case undefined:
-			throw new RangeError("Invalid mode", { cause: mode });
+export const selectFrameSize = (mode: NonNullable<CamMode>) => {
+	switch (mode.stream) {
 		case Cam.VISIBLE: {
 			const [width, height] = visibleRes[mode.res];
 			const bpp = visibleBpp[mode.format];

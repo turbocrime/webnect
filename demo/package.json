@@ -4,7 +4,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"build": "tsc --build --clean && vite build",
+		"build": "tsc --build && vite build",
 		"clean": "rm -rfv dist",
 		"dev": "vite"
 	},

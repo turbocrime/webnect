@@ -61,8 +61,8 @@ export const unpackGrayToRgbaFloat16 = (
 };
 
 const BAYER_NORMAL = 1 / 255;
-const BAYER_NORMAL2 = BAYER_NORMAL * 2;
-const BAYER_NORMAL4 = BAYER_NORMAL * 4;
+const BAYER_NORMAL2 = 1 / (255 * 2);
+const BAYER_NORMAL4 = 1 / (255 * 4);
 
 /**
  * Convert Bayer pattern to RGBA float16 format
@@ -172,7 +172,7 @@ const YUV_NORMAL = 1 / 255;
  * @param outBuffer Output buffer
  * @returns RGBA float16 buffer
  */
-export function uyvyToRgbaFloat16(
+export function yuvToRgbaFloat16(
 	uyvyBuffer: ArrayBuffer,
 	outBuffer = new ArrayBuffer(
 		uyvyBuffer.byteLength * 2 * Float16Array.BYTES_PER_ELEMENT,
