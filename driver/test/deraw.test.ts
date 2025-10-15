@@ -12,16 +12,29 @@ import {
 } from "../src/camera/mode.js";
 import { selectRes } from "../src/camera/stream/dimensions.js";
 
+// available since chrome 140
+declare global {
+	interface Uint8Array {
+		toBase64(): string;
+	}
+}
+
+console.debug("chrome version", navigator.userAgent);
+
 describe("deraw", () => {
+	let testDiv: HTMLDivElement;
+	let canvas: HTMLCanvasElement;
 	let canvasContext: CanvasRenderingContext2D;
 
+	document.body.style.width = "800px";
+
 	beforeEach((ctx) => {
-		const testDiv = document.createElement("div");
-		testDiv.id = ctx.task.id;
+		testDiv = document.createElement("div");
+		testDiv.id = ctx.task.name;
 		testDiv.textContent = ctx.task.name;
 		document.body.appendChild(testDiv);
 
-		const canvas = document.createElement("canvas");
+		canvas = document.createElement("canvas");
 		testDiv.appendChild(canvas);
 
 		canvas.width = 640;
@@ -48,11 +61,12 @@ describe("deraw", () => {
 		);
 		canvasContext.putImageData(imageData, 0, 0);
 
-		const hashCanvas = await crypto.subtle.digest(
-			"SHA-256",
-			canvasContext.getImageData(0, 0, width, height).data,
-		);
-		expect(hashCanvas).toMatchSnapshot();
+		expect(imageData.data.length).toMatchSnapshot();
+		expect(
+			new Uint8Array(
+				canvasContext.getImageData(0, 0, width, height).data.buffer,
+			).toBase64(),
+		).toMatchSnapshot();
 	});
 
 	test("infrared 10bit", async () => {
@@ -72,11 +86,12 @@ describe("deraw", () => {
 		);
 		canvasContext.putImageData(imageData, 0, 0);
 
-		const hashCanvas = await crypto.subtle.digest(
-			"SHA-256",
-			canvasContext.getImageData(0, 0, width, height).data,
-		);
-		expect(hashCanvas).toMatchSnapshot();
+		expect(imageData.data.length).toMatchSnapshot();
+		expect(
+			new Uint8Array(
+				canvasContext.getImageData(0, 0, width, height).data.buffer,
+			).toBase64(),
+		).toMatchSnapshot();
 	});
 
 	test("yuv", async () => {
@@ -96,11 +111,12 @@ describe("deraw", () => {
 		);
 		canvasContext.putImageData(imageData, 0, 0);
 
-		const hashCanvas = await crypto.subtle.digest(
-			"SHA-256",
-			canvasContext.getImageData(0, 0, width, height).data,
-		);
-		expect(hashCanvas).toMatchSnapshot();
+		expect(imageData.data.length).toMatchSnapshot();
+		expect(
+			new Uint8Array(
+				canvasContext.getImageData(0, 0, width, height).data.buffer,
+			).toBase64(),
+		).toMatchSnapshot();
 	});
 
 	test("bayer", async () => {
@@ -120,10 +136,11 @@ describe("deraw", () => {
 		);
 		canvasContext.putImageData(imageData, 0, 0);
 
-		const hashCanvas = await crypto.subtle.digest(
-			"SHA-256",
-			canvasContext.getImageData(0, 0, width, height).data,
-		);
-		expect(hashCanvas).toMatchSnapshot();
+		expect(imageData.data.length).toMatchSnapshot();
+		expect(
+			new Uint8Array(
+				canvasContext.getImageData(0, 0, width, height).data.buffer,
+			).toBase64(),
+		).toMatchSnapshot();
 	});
 });
