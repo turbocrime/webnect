@@ -1,16 +1,7 @@
-import { defineConfig } from "vite";
 import basicSsl from "@vitejs/plugin-basic-ssl";
+import { defineConfig } from "vite";
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
+	clearScreen: false,
 	plugins: [basicSsl()],
-	build: {
-		target: "es2022",
-		rollupOptions: {
-			output: {
-				manualChunks: {
-					worker: ["@webnect/webnect/worker"],
-				},
-			},
-		},
-	},
-}));
+});

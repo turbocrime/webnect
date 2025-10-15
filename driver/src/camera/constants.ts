@@ -1,0 +1,2 @@
+export const COMMAND_HEADER_BYTES = 8;
+export const COMMAND_RESPONSE_POLL_MS = 15;

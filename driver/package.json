@@ -1,0 +1,35 @@
+{
+	"name": "@webnect/driver",
+	"author": "turbocrime",
+	"description": "a webUSB driver for the xbox360 kinect",
+	"version": "0.0.6",
+	"type": "module",
+	"scripts": {
+		"build": "tsc --build --clean",
+		"clean": "rm -rfv dist",
+		"prepack": "$npm_execpath run clean && $npm_execpath run build"
+	},
+	"files": [
+		"./dist",
+		"./src"
+	],
+	"exports": {
+		".": "./src/index.ts",
+		"./deraw": "./src/camera/deraw/index.ts"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"default": "./src/index.js",
+				"type": "./src/index.d.ts"
+			},
+			"./deraw": {
+				"default": "./src/camera/deraw/index.js",
+				"type": "./src/camera/deraw/index.d.ts"
+			}
+		}
+	},
+	"devDependencies": {
+		"@types/w3c-web-usb": "^1.0.12"
+	}
+}

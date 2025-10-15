@@ -1,45 +1,18 @@
 {
-	"name": "@webnect/webnect",
-	"author": "turbocrime",
-	"description": "a webUSB driver for the xbox360 kinect",
-	"version": "0.0.5",
+	"name": "webnect",
+	"private": true,
 	"type": "module",
-	"workspaces": [
-		"demo"
-	],
-	"exports": {
-		".": "./src/index.ts",
-		"./Camera": "./src/Camera/index.ts",
-		"./Motor": "./src/Motor/index.ts",
-		"./stream": "./src/stream/index.ts",
-		"./worker": "./src/worker/index.ts"
-	},
-	"files": [
-		"./dist",
-		"./src"
-	],
 	"scripts": {
-		"dev": "pnpm -C demo dev",
-		"build": "tsc",
-		"clean": "rm -rf ./dist/*",
-		"lint": "biome check ./src",
-		"format": "biome format --write src",
-		"prepublishOnly": "pnpm clean && pnpm lint && pnpm build"
-	},
-	"publishConfig": {
-		"access": "public",
-		"exports": {
-			".": "./dist/index.js",
-			"./Camera": "./dist/Camera/index.js",
-			"./Motor": "./dist/Motor/index.js",
-			"./stream": "./dist/stream/index.js",
-			"./worker": "./dist/worker/index.js"
-		},
-		"types": "./dist/index.d.ts"
+		"clean": "pnpm -r clean",
+		"build": "pnpm -r build",
+		"dev": "pnpm -r dev",
+		"lint": "biome check",
+		"format": "biome format --write"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^1.2.2",
-		"@types/w3c-web-usb": "^1.0.6",
-		"typescript": "^5.2.2"
-	}
+		"@biomejs/biome": "2.2.5",
+		"@tsconfig/strictest": "^2.0.6",
+		"typescript": "^5.9.2"
+	},
+	"packageManager": "pnpm@10.17.1+sha512.17c560fca4867ae9473a3899ad84a88334914f379be46d455cbf92e5cf4b39d34985d452d2583baf19967fa76cb5c17bc9e245529d0b98745721aa7200ecaf7a"
 }
