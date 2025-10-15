@@ -1,13 +1,20 @@
-name: release package to npm
+name: Build CI
+
+permissions:
+  contents: read
 
 on:
-  push:
-    tags: [v*.*.*]
-
   workflow_dispatch:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  publish:
+  release:
+    name: Build CI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -18,4 +25,5 @@ jobs:
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm publish ./driver
+      - run: pnpm lint
+      - run: pnpm build

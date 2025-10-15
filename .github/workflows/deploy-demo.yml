@@ -1,10 +1,9 @@
-name: deploy demo to github-pages
+name: Deploy demo
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main"]
-
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,5 +35,6 @@ jobs:
       - uses: actions/upload-pages-artifact@v4
         with:
           path: "./demo/dist"
+
       - id: deployment
         uses: actions/deploy-pages@v4
