@@ -20,6 +20,7 @@
 		"./deraw": "./src/camera/deraw/index.ts"
 	},
 	"publishConfig": {
+		"access": "public",
 		"exports": {
 			".": {
 				"default": "./src/index.js",
