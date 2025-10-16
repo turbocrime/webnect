@@ -23,12 +23,12 @@
 		"access": "public",
 		"exports": {
 			".": {
-				"default": "./src/index.js",
-				"type": "./src/index.d.ts"
+				"default": "./dist/index.js",
+				"type": "./dist/index.d.ts"
 			},
 			"./deraw": {
-				"default": "./src/camera/deraw/index.js",
-				"type": "./src/camera/deraw/index.d.ts"
+				"default": "./dist/camera/deraw/index.js",
+				"type": "./dist/camera/deraw/index.d.ts"
 			}
 		}
 	},
