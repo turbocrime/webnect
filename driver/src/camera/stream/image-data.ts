@@ -5,6 +5,41 @@ import type { CamMode } from "../mode.js";
 import { selectRes } from "./dimensions.js";
 
 /** Extends ImageData, and accepts a raw frame stream to continuosuly update the image */
+
+const frameTimes: number[] = [];
+
+const countFrame = () => {
+	frameTimes.push(performance.now());
+	if (frameTimes.length === 100) {
+		// biome-ignore lint/style/noNonNullAssertion: ok
+		const totalDiff = frameTimes[0]! - frameTimes[99]!;
+		const diffs = [];
+		let maxDiff = -Infinity;
+		let minDiff = Infinity;
+		for (let i = 1; i < frameTimes.length; i++) {
+			// biome-ignore lint/style/noNonNullAssertion: ok
+			const diff = frameTimes[i]! - frameTimes[i - 1]!;
+			diffs.push(diff);
+			maxDiff = Math.max(maxDiff, diff);
+			minDiff = Math.min(minDiff, diff);
+		}
+		const avgDiff = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+		console.debug((1000 / avgDiff).toFixed(2), "fps");
+		console.debug(
+			"avg",
+			avgDiff.toFixed(2),
+			"max",
+			maxDiff.toFixed(2),
+			"min",
+			minDiff.toFixed(2),
+			"total",
+			totalDiff,
+		);
+		frameTimes.length = 0;
+	}
+};
+
+let odd = false;
 export class CamImageData<M extends CamMode>
 	extends ImageData
 	implements UnderlyingSink<ArrayBuffer>
@@ -37,7 +72,11 @@ export class CamImageData<M extends CamMode>
 	}
 
 	async write(rawFrame: ArrayBuffer) {
-		this.rawToRgba(rawFrame, this.data.buffer);
+		odd = !odd;
+		if (!odd) {
+			countFrame();
+			this.rawToRgba(rawFrame, this.data.buffer);
+		}
 	}
 }
 

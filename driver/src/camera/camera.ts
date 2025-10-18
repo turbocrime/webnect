@@ -120,6 +120,7 @@ export class Camera {
 	 * @returns Active image data streams
 	 */
 	public async setMode<C extends CameraConfig>(config: C) {
+		console.debug("setMode", config);
 		await this.ready;
 
 		const images = resolveConfig(config);
