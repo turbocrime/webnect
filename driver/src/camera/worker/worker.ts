@@ -57,6 +57,8 @@ const getDevice = async (
 			await dev.claimInterface(usbInterface);
 		}
 
+		await dev.selectAlternateInterface(usbInterface, 0);
+
 		return dev;
 	});
 
