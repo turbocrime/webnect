@@ -9,6 +9,7 @@ import {
 import { CamIsoStream } from "../stream/iso-parser.js";
 import { UnderlyingIsochronousTransferSource } from "../stream/transfer-source.js";
 import { ISOCHRONOUS_BATCH_SIZE } from "./constants.js";
+import { prepareCamDevice } from "./get-device.js";
 import {
 	type IsoWorkerRequest,
 	type IsoWorkerResponse,
@@ -40,26 +41,7 @@ const getDevice = async (
 				`Device with serial number ${serialNumber} not found`,
 			);
 		}
-
-		if (!dev.opened) {
-			await dev.open();
-		}
-
-		const iface = dev.configuration?.interfaces.find(
-			(iface) => iface.interfaceNumber === usbInterface,
-		);
-
-		if (!iface) {
-			throw new ReferenceError(`Interface ${usbInterface} not found`);
-		}
-
-		if (!iface.claimed) {
-			await dev.claimInterface(usbInterface);
-		}
-
-		await dev.selectAlternateInterface(usbInterface, 0);
-
-		return dev;
+		return prepareCamDevice(dev, usbInterface);
 	});
 
 	return activeDevice;
