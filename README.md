@@ -91,7 +91,7 @@ check your usb devices:
 
 #### linux still broken?
 
-hit it with a `modprobe -r gspca_kinect` and maybe some udev rules
+hit it with a `modprobe --remove gspca_kinect` and maybe some udev rules
 
 ```rules
 # /etc/udev/rules.d/51-kinect.rules
