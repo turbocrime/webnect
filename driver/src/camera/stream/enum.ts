@@ -15,6 +15,10 @@ export enum CamIsoInterface {
 	CAMERA = 0,
 }
 
+export enum CamIsoAltSetting {
+	CAMERA = 0,
+}
+
 export enum CamIsoStreamFlag {
 	VIDEO = 0b1000,
 	DEPTH = 0b0111,
