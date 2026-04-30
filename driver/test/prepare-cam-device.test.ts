@@ -2,7 +2,10 @@
 /** biome-ignore-all lint/style/noNonNullAssertion: test code */
 
 import { describe, expect, test, vi } from "vitest";
-import { CamIsoInterface } from "../src/camera/stream/enum.js";
+import {
+	CamIsoAltSetting,
+	CamIsoInterface,
+} from "../src/camera/stream/enum.js";
 import { prepareCamDevice } from "../src/camera/worker/get-device.js";
 
 const makeAlt = (alternateSetting: number): USBAlternateInterface =>
@@ -64,10 +67,10 @@ const makeDevice = (
 };
 
 describe("prepareCamDevice", () => {
-	test("claims and selects alt setting in order when interface is unclaimed", async () => {
+	test("claims then selects target alt when interface is unclaimed and on a different alt", async () => {
 		const iface = makeIface(CamIsoInterface.CAMERA, {
 			claimed: false,
-			alternateSetting: 0,
+			alternateSetting: 1,
 		});
 		const { device, claimInterface, selectAlternateInterface } =
 			makeDevice(iface);
@@ -77,7 +80,7 @@ describe("prepareCamDevice", () => {
 		expect(claimInterface).toHaveBeenCalledWith(CamIsoInterface.CAMERA);
 		expect(selectAlternateInterface).toHaveBeenCalledWith(
 			CamIsoInterface.CAMERA,
-			0,
+			CamIsoAltSetting.CAMERA,
 		);
 
 		const claimOrder = claimInterface.mock.invocationCallOrder[0]!;
@@ -85,10 +88,10 @@ describe("prepareCamDevice", () => {
 		expect(claimOrder).toBeLessThan(selectOrder);
 	});
 
-	test("skips claim when interface is already claimed but still selects alt", async () => {
+	test("skips claim when already claimed but still selects target alt if currently on a different alt", async () => {
 		const iface = makeIface(CamIsoInterface.CAMERA, {
 			claimed: true,
-			alternateSetting: 0,
+			alternateSetting: 1,
 		});
 		const { device, claimInterface, selectAlternateInterface } =
 			makeDevice(iface);
@@ -98,23 +101,22 @@ describe("prepareCamDevice", () => {
 		expect(claimInterface).not.toHaveBeenCalled();
 		expect(selectAlternateInterface).toHaveBeenCalledWith(
 			CamIsoInterface.CAMERA,
-			0,
+			CamIsoAltSetting.CAMERA,
 		);
 	});
 
-	test("forwards the descriptor's alternateSetting verbatim", async () => {
+	test("skips selectAlternateInterface when device is already on the target alt", async () => {
 		const iface = makeIface(CamIsoInterface.CAMERA, {
 			claimed: false,
-			alternateSetting: 3,
+			alternateSetting: CamIsoAltSetting.CAMERA,
 		});
-		const { device, selectAlternateInterface } = makeDevice(iface);
+		const { device, claimInterface, selectAlternateInterface } =
+			makeDevice(iface);
 
 		await prepareCamDevice(device, CamIsoInterface.CAMERA);
 
-		expect(selectAlternateInterface).toHaveBeenCalledWith(
-			CamIsoInterface.CAMERA,
-			3,
-		);
+		expect(claimInterface).toHaveBeenCalledWith(CamIsoInterface.CAMERA);
+		expect(selectAlternateInterface).not.toHaveBeenCalled();
 	});
 
 	test("throws ReferenceError when the requested interface is not present", async () => {

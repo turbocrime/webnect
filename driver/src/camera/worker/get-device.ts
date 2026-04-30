@@ -1,4 +1,4 @@
-import type { CamIsoInterface } from "../stream/enum.js";
+import { CamIsoAltSetting, type CamIsoInterface } from "../stream/enum.js";
 
 export async function prepareCamDevice(
 	dev: USBDevice,
@@ -19,10 +19,9 @@ export async function prepareCamDevice(
 		await dev.claimInterface(usbInterface);
 	}
 
-	await dev.selectAlternateInterface(
-		usbInterface,
-		iface.alternate.alternateSetting,
-	);
+	if (iface.alternate.alternateSetting !== CamIsoAltSetting.CAMERA) {
+		await dev.selectAlternateInterface(usbInterface, CamIsoAltSetting.CAMERA);
+	}
 
 	return dev;
 }
