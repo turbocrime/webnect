@@ -89,9 +89,18 @@ check your usb devices:
   - on linux use `lsusb`
   - on macos use `system_profiler SPUSBDataType`
 
-#### its glitchy
+#### linux still broken?
 
-haha nice. cool
+hit it with a `modprobe --remove gspca_kinect` and maybe some udev rules
+
+```rules
+# /etc/udev/rules.d/51-kinect.rules
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02ae", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02ad", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02b0", MODE="0666"
+```
+
+then `udevadm control --reload-rules && udevadm trigger`
 
 ### bad parts
 
